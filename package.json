@@ -1,0 +1,22 @@
+{
+  "name": "disappointed-dad-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/cli",
+    "apps/web",
+    "apps/vscode"
+  ],
+  "scripts": {
+    "build": "npm run build -w @disappointed-dad/core && npm run build -w disappointed-dad",
+    "test": "npm run build && npm test -w @disappointed-dad/core && npm test -w @disappointed-dad/web",
+    "web": "npm run build -w @disappointed-dad/core && npm run dev -w @disappointed-dad/web",
+    "dad": "node packages/cli/bin/dad.js",
+    "daddy": "node packages/cli/bin/daddy.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

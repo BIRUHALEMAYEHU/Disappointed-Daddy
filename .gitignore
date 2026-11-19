@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.disappointed-dad/
+.env
+.env.*
+!.env.example
+packages/cli/README.md
+.next/
+next-env.d.ts
