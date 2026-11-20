@@ -86,6 +86,9 @@ export async function POST(req: Request) {
       const emit = (event: object) => controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
       try {
         const { source, snapshot } = await loadRepo(user.id, owner, repo, await githubToken());
+        if (source.tokenRejected && body.message === null) {
+          emit({ type: "notice", message: "Your GitHub sign-in has expired, so Dad is reading this public repo without it. Sign out and back in on the home page to refresh it." });
+        }
         const session = await InterviewSession.create({
           source,
           snapshot,

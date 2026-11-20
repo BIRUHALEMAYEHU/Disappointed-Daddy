@@ -23,7 +23,10 @@ export class GitHubSource implements RepoSource {
   isPrivate = false;
   truncated = false;
 
-  constructor(readonly owner: string, readonly repo: string, private readonly token?: string) {
+  /** True if the user's token was rejected and we fell back to anonymous (public-only) access. */
+  tokenRejected = false;
+
+  constructor(readonly owner: string, readonly repo: string, private token?: string) {
     if (!OWNER.test(owner) || !REPO.test(repo)) throw new Error("Invalid repository name.");
     this.name = repo;
   }
@@ -37,9 +40,21 @@ export class GitHubSource implements RepoSource {
         ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
       },
     });
+    if (res.status === 401 && this.token) {
+      // An expired or revoked user token: public repos are readable without one, so retry anonymously.
+      this.token = undefined;
+      this.tokenRejected = true;
+      return this.api<T>(pathAndQuery, accept);
+    }
     if (res.status === 404) return null;
-    if (res.status === 403 || res.status === 429) throw new Error("GitHub rate limit reached. Try again in a few minutes.");
-    if (!res.ok) throw new Error(`GitHub error ${res.status}.`);
+    if (res.status === 403 || res.status === 429) {
+      throw new Error(
+        this.tokenRejected
+          ? "GitHub rate limit reached. Sign out and sign in again on the website to use your own GitHub limit, then retry."
+          : "GitHub rate limit reached. Try again in a few minutes.",
+      );
+    }
+    if (!res.ok) throw new Error(`GitHub returned an error (${res.status}). Try again in a minute.`);
     const data = (accept.endsWith("raw") ? await res.text() : await res.json()) as T;
     return { data, res };
   }
