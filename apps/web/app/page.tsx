@@ -37,6 +37,7 @@ dad`}</pre>
       {user ? (
         <div className="row">
           <a className="btn" href="/interview">Start an interview</a>
+          <a className="chip" href="/pro">Dad Pro</a>
           <form action="/api/auth/logout" method="post">
             <span className="muted">Signed in as {user.login} · </span>
             <button className="link" type="submit">Sign out</button>

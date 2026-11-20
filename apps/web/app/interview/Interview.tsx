@@ -215,6 +215,7 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
           <p className="muted small" style={{ margin: 0 }}>
             Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.
             It stays in this browser and is sent only with your interview messages. It&rsquo;s never stored on our servers.
+            {!isPro && <> No key? <a href="/pro">Get Dad Pro</a>.</>}
           </p>
           <label className="check small">
             <input type="checkbox" checked={rememberKey} onChange={(e) => setRememberKey(e.target.checked)} /> Remember the key on this device

@@ -62,6 +62,55 @@ export async function saveWebProgress(userId: number, repo: string, data: unknow
   return row.inserted;
 }
 
+/** Payment verification attempts in the last hour and day (for rate limiting). */
+export async function recentPaymentAttempts(userId: number): Promise<{ hour: number; day: number }> {
+  const [row] = await db()<{ hour: number; day: number }[]>`
+    select count(*) filter (where created_at > now() - interval '1 hour')::int as hour,
+           count(*)::int as day
+    from payment_attempts where user_id = ${userId} and created_at > now() - interval '1 day'`;
+  return row;
+}
+
+export async function recordPaymentAttempt(userId: number): Promise<void> {
+  await db()`insert into payment_attempts (user_id) values (${userId})`;
+}
+
+export async function birrReferenceUsed(bank: string, reference: string): Promise<boolean> {
+  const rows = await db()`select 1 from birr_payments where bank = ${bank} and reference = ${reference}`;
+  return rows.length > 0;
+}
+
+/**
+ * Records a verified Birr payment and extends Pro, atomically. Returns the new Pro end date,
+ * or null if the reference was already used (the unique constraint makes double-spending impossible,
+ * even when two requests race).
+ */
+export async function grantBirrPayment(p: {
+  userId: number;
+  bank: string;
+  reference: string;
+  amount: number;
+  days: number;
+  payerName: string | null;
+  receiverAccount: string | null;
+  paidAt: Date | null;
+}): Promise<Date | null> {
+  return db().begin(async (sql) => {
+    const inserted = await sql`
+      insert into birr_payments (user_id, bank, reference, amount, payer_name, receiver_account, paid_at, days_granted)
+      values (${p.userId}, ${p.bank}, ${p.reference}, ${p.amount}, ${p.payerName}, ${p.receiverAccount}, ${p.paidAt}, ${p.days})
+      on conflict (bank, reference) do nothing
+      returning id`;
+    if (inserted.length === 0) return null;
+    const [user] = await sql<{ proUntil: Date }[]>`
+      update users
+      set pro_until = greatest(coalesce(pro_until, now()), now()) + make_interval(days => ${p.days})
+      where id = ${p.userId}
+      returning pro_until as "proUntil"`;
+    return user.proUntil;
+  });
+}
+
 export async function usageToday(userId: number): Promise<number> {
   const [row] = await db()<{ requests: number }[]>`
     select requests from usage_daily where user_id = ${userId} and day = (now() at time zone 'utc')::date`;

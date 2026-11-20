@@ -51,8 +51,34 @@ create table if not exists web_progress (
   primary key (user_id, repo)
 );
 
-alter table users         enable row level security;
-alter table web_progress  enable row level security;
+-- Ethiopian payments verified through verify.et. Every accepted reference is stored once,
+-- so the same transaction can never unlock Pro twice.
+create table if not exists birr_payments (
+  id                 bigserial primary key,
+  user_id            bigint not null references users(id) on delete cascade,
+  bank               text not null,
+  reference          text not null,
+  amount             numeric(12,2) not null,
+  payer_name         text,
+  receiver_account   text,
+  paid_at            timestamptz,
+  days_granted       integer not null,
+  verified_at        timestamptz not null default now(),
+  unique (bank, reference)
+);
+
+-- Every verification attempt (accepted or not), to rate-limit attempts and protect verify.et credits.
+create table if not exists payment_attempts (
+  id          bigserial primary key,
+  user_id     bigint not null references users(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+create index if not exists payment_attempts_user_time on payment_attempts (user_id, created_at desc);
+
+alter table users            enable row level security;
+alter table web_progress     enable row level security;
+alter table birr_payments    enable row level security;
+alter table payment_attempts enable row level security;
 alter table cli_tokens    enable row level security;
 alter table device_codes  enable row level security;
 alter table usage_daily   enable row level security;
