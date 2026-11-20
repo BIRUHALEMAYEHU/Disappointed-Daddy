@@ -88,7 +88,11 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
     setApiKey(saved.key);
     setRememberKey(saved.remembered);
   }, []);
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [lines]);
+  // Braces matter: an effect must return nothing or a cleanup function. Newer browsers make
+  // scrollIntoView() return a Promise, which React would later try to call as cleanup and crash.
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [lines]);
 
   const name = voice === "daddy" ? "Daddy" : "Dad";
 
