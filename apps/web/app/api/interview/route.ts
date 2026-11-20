@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { InterviewSession, parseGithubRepo, type History, type Mode, type Voice } from "@disappointed-dad/core";
+import {
+  InterviewSession, isProviderId, looksLikeApiKey, looksLikeModel, parseGithubRepo, PROVIDERS, ProviderError,
+  type History, type Mode, type ProviderId, type Voice,
+} from "@disappointed-dad/core";
 import { currentUser, githubToken, isPro, isSameOrigin } from "@/lib/auth";
 import { chargeUsage, incrementUsage } from "@/lib/db";
 import { chargesCredit } from "@/lib/plans";
@@ -32,9 +35,11 @@ interface Body {
    * used for that turn only, and never stored, logged or returned.
    */
   apiKey?: string;
+  /** Which provider the key is for (default anthropic). Only the fixed presets are allowed. */
+  provider?: ProviderId;
+  /** Model for OpenAI-compatible providers (defaults to the preset's model when it has one). */
+  model?: string;
 }
-
-const API_KEY_SHAPE = /^sk-ant-[A-Za-z0-9_-]{20,300}$/;
 
 function parseBody(raw: string): Body | string {
   if (raw.length > MAX_BODY_BYTES) return "This session got too long. Start a new one.";
@@ -51,9 +56,13 @@ function parseBody(raw: string): Body | string {
   if (b.message !== null && (typeof b.message !== "string" || !b.message.trim() || b.message.length > 8000)) return "Invalid message.";
   if (b.history.length === 0 && b.message !== null) return "Start the session first.";
   if (b.mode === "topic" && (typeof b.topic !== "string" || !b.topic.trim())) return "Which topic?";
-  if (b.apiKey !== undefined && (typeof b.apiKey !== "string" || !API_KEY_SHAPE.test(b.apiKey.trim()))) {
-    return "That doesn't look like an Anthropic API key (they start with sk-ant-).";
+  if (b.provider !== undefined && !isProviderId(b.provider)) return "Unsupported AI provider.";
+  if (b.apiKey !== undefined && (typeof b.apiKey !== "string" || !looksLikeApiKey(b.apiKey.trim()))) {
+    return "That doesn't look like an API key. Paste it again without spaces.";
   }
+  if (b.model !== undefined && (typeof b.model !== "string" || !looksLikeModel(b.model.trim()))) return "That model name doesn't look right.";
+  const preset = PROVIDERS[b.provider ?? "anthropic"];
+  if (b.apiKey && preset.kind === "openai" && !(b.model?.trim() || preset.defaultModel)) return `Choose a ${preset.label} model.`;
   return b as Body;
 }
 
@@ -72,6 +81,7 @@ export async function POST(req: Request) {
 
   // Whose AI account pays for this turn: the user's own key, or ours for Pro accounts. No free usage.
   const ownKey = body.apiKey?.trim();
+  const byokProvider: ProviderId = body.provider ?? "anthropic";
   if (!ownKey && !isPro(user)) return Response.json({ error: PRO_REQUIRED, needKey: true }, { status: 402 });
   const limit = ownKey ? byokDailyRequests() : proDailyRequests();
   if ((await incrementUsage(user.id)) > limit) {
@@ -99,9 +109,10 @@ export async function POST(req: Request) {
           topic: body.topic,
           hard: body.hard,
           endless: body.endless,
-          provider: "anthropic",
-          apiKey: ownKey ?? env("ANTHROPIC_API_KEY"),
-          model: hostedModel(),
+          // Own key: the provider the user chose. Otherwise Pro on our Anthropic key.
+          ...(ownKey && byokProvider !== "anthropic"
+            ? { provider: "openai-compatible" as const, providerId: byokProvider, apiKey: ownKey, model: body.model?.trim() || undefined }
+            : { provider: "anthropic" as const, apiKey: ownKey ?? env("ANTHROPIC_API_KEY"), model: ownKey ? body.model?.trim() || undefined : hostedModel() }),
         });
         // Prepaid Pro: charge every model call at real cost; stop as soon as the balance runs out.
         const metered = !ownKey && chargesCredit(user);
@@ -130,6 +141,11 @@ export async function POST(req: Request) {
         // Never include the raw error: an SDK error could echo request details.
         const message =
           err instanceof OutOfCredit ? "You're out of Dad Pro credit. Top up at /pro, or add your own API key."
+          : err instanceof ProviderError
+            ? err.status === 401 || err.status === 403 ? `${PROVIDERS[byokProvider].label} rejected that API key.`
+            : err.status === 404 ? "That model wasn't found for this provider. Check the model name."
+            : err.status === 429 ? `${PROVIDERS[byokProvider].label} rate limit or quota reached. Try again later.`
+            : `${PROVIDERS[byokProvider].label} error: ${err.message.slice(0, 200)}`
           : err instanceof Anthropic.AuthenticationError ? (ownKey ? "Anthropic rejected that API key. Check it at console.anthropic.com." : "The server's API key is invalid.")
           : err instanceof Anthropic.PermissionDeniedError ? "That API key isn't allowed to use this model. Check your Anthropic account."
           : err instanceof Anthropic.RateLimitError ? "Rate limited by Anthropic. Try again in a minute."

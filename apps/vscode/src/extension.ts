@@ -1,11 +1,13 @@
 import * as vscode from "vscode";
 import {
-  DEFAULT_SERVER_URL, InterviewSession, isForbiddenPath, loadProgress, loadProjectConfig, loadUserConfig,
-  type Mode, type Progress, type Provider, type Voice,
+  DEFAULT_SERVER_URL, InterviewSession, isForbiddenPath, isProviderId, loadProgress, loadProjectConfig, loadUserConfig,
+  looksLikeApiKey, looksLikeModel, PROVIDERS,
+  type Mode, type Progress, type Provider, type ProviderId, type Voice,
 } from "@disappointed-dad/core";
 import { webviewHtml } from "./webview";
 
-const SECRET_KEY = "disappointedDad.anthropicApiKey";
+const LEGACY_ANTHROPIC_SECRET = "disappointedDad.anthropicApiKey";
+const secretFor = (id: ProviderId) => (id === "anthropic" ? LEGACY_ANTHROPIC_SECRET : `disappointedDad.key.${id}`);
 
 export function activate(context: vscode.ExtensionContext) {
   const register = (id: string, fn: () => unknown) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
@@ -13,15 +15,40 @@ export function activate(context: vscode.ExtensionContext) {
   register("disappointedDad.start", () => startInterview(context));
   register("disappointedDad.reportCard", () => showReportCard());
   register("disappointedDad.setApiKey", async () => {
-    const key = await vscode.window.showInputBox({ prompt: "Anthropic API key (stored in VS Code's secret storage)", password: true, ignoreFocusOut: true });
-    if (key?.trim()) {
-      await context.secrets.store(SECRET_KEY, key.trim());
-      vscode.window.showInformationMessage("Saved. \"Good. Now sit down.\"");
+    const items = (Object.keys(PROVIDERS) as ProviderId[]).map((id) => ({ label: PROVIDERS[id].label, description: PROVIDERS[id].note ?? "", id }));
+    const picked = await vscode.window.showQuickPick(items, { title: "Which AI provider is your key for?" });
+    if (!picked) return;
+    const preset = PROVIDERS[picked.id];
+    const key = (await vscode.window.showInputBox({
+      prompt: `${preset.label} API key (stored in VS Code's secret storage). Get one at ${preset.keyUrl}`,
+      password: true,
+      ignoreFocusOut: true,
+      validateInput: (v) => (looksLikeApiKey(v.trim()) ? null : "That doesn't look like an API key."),
+    }))?.trim();
+    if (!key) return;
+    const cfg = vscode.workspace.getConfiguration("disappointedDad");
+    if (picked.id !== "anthropic") {
+      const model = (await vscode.window.showInputBox({
+        prompt: `${preset.label} model`,
+        value: preset.defaultModel ?? "",
+        placeHolder: "Model name from the provider's docs",
+        ignoreFocusOut: true,
+        validateInput: (v) => (looksLikeModel(v.trim()) ? null : "Enter a model name."),
+      }))?.trim();
+      if (!model) return;
+      await cfg.update("byokModel", model, vscode.ConfigurationTarget.Global);
     }
+    await context.secrets.store(secretFor(picked.id), key);
+    await cfg.update("byokProvider", picked.id, vscode.ConfigurationTarget.Global);
+    vscode.window.showInformationMessage(
+      `Saved. Dad will use ${preset.label}. "Good. Now sit down."` +
+        (picked.id === "gemini" ? " Note: on Gemini's free tier, Google may use what you send to improve its products." : ""),
+    );
   });
   register("disappointedDad.clearApiKey", async () => {
-    await context.secrets.delete(SECRET_KEY);
-    vscode.window.showInformationMessage("API key removed.");
+    for (const id of Object.keys(PROVIDERS) as ProviderId[]) await context.secrets.delete(secretFor(id));
+    await vscode.workspace.getConfiguration("disappointedDad").update("byokProvider", undefined, vscode.ConfigurationTarget.Global);
+    vscode.window.showInformationMessage("API keys removed.");
   });
 }
 
@@ -36,6 +63,7 @@ function projectRoot(): string | undefined {
 
 interface Brain {
   provider: Provider;
+  providerId?: ProviderId;
   apiKey?: string;
   hostedToken?: string;
   serverUrl?: string;
@@ -48,9 +76,16 @@ async function resolveBrain(context: vscode.ExtensionContext): Promise<Brain | n
   const cfg = vscode.workspace.getConfiguration("disappointedDad");
   const choice = cfg.get<string>("provider", "auto");
   const cli = loadUserConfig();
-  const apiKey = (await context.secrets.get(SECRET_KEY)) ?? process.env.ANTHROPIC_API_KEY ?? cli.apiKey;
   const model = cfg.get<string>("model") || undefined;
   const serverUrl = cfg.get<string>("serverUrl") || cli.serverUrl || DEFAULT_SERVER_URL;
+
+  // Bring-your-own-key for a non-Anthropic provider, chosen with "Set API Key".
+  const byok = cfg.get<string>("byokProvider");
+  if ((choice === "auto" || choice === "anthropic") && isProviderId(byok) && byok !== "anthropic") {
+    const key = await context.secrets.get(secretFor(byok));
+    if (key) return { provider: "openai-compatible", providerId: byok, apiKey: key, model: cfg.get<string>("byokModel") || PROVIDERS[byok].defaultModel };
+  }
+  const apiKey = (await context.secrets.get(LEGACY_ANTHROPIC_SECRET)) ?? process.env.ANTHROPIC_API_KEY ?? cli.apiKey;
 
   if (choice === "ollama") return { provider: "ollama", ollamaUrl: cfg.get<string>("ollamaUrl"), model };
   if (choice === "anthropic" && apiKey) return { provider: "anthropic", apiKey, model };
@@ -59,7 +94,7 @@ async function resolveBrain(context: vscode.ExtensionContext): Promise<Brain | n
   if (choice === "auto" && cli.hostedToken) return { provider: "hosted", hostedToken: cli.hostedToken, serverUrl };
 
   const pick = await vscode.window.showWarningMessage(
-    "Dad needs a brain first. Use your own Anthropic API key (console.anthropic.com), a local Ollama model, or Dad Pro.",
+    "Dad needs a brain first. Use your own API key (Anthropic, OpenAI, Gemini, OpenRouter…), a local Ollama model, or Dad Pro.",
     "Set API Key",
     "Use local Ollama",
     "Dad Pro (dad login)",
@@ -185,8 +220,11 @@ function explain(err: unknown, provider: Provider): string {
   const status = (err as { status?: number })?.status;
   const msg = err instanceof Error ? err.message : String(err);
   if (provider === "ollama" && /ECONNREFUSED|Connection error/i.test(msg)) return "Can't reach Ollama. Is it running? (ollama serve)";
-  if (status === 401) return provider === "hosted" ? "Your login expired. Run `dad login` in a terminal." : "Invalid API key. Run \"Disappointed Dad: Set Anthropic API Key\".";
-  if (status === 402) return "Dad Pro isn't active on your account. Run \"Disappointed Dad: Set Anthropic API Key\" to use your own key.";
+  if (status === 401 || (status === 403 && provider === "openai-compatible")) {
+    return provider === "hosted" ? "Your login expired. Run `dad login` in a terminal." : "Your API key was rejected. Run \"Disappointed Dad: Set API Key\".";
+  }
+  if (status === 402) return "Dad Pro isn't active on your account. Run \"Disappointed Dad: Set API Key\" to use your own key.";
+  if (status === 404 && provider === "openai-compatible") return "That model wasn't found. Run \"Disappointed Dad: Set API Key\" to pick another.";
   if (status === 429) return provider === "hosted" ? "Daily limit reached (resets at midnight UTC)." : "Rate limited. Try again in a minute.";
   return msg;
 }

@@ -6,6 +6,8 @@ import {
 } from "./progress.js";
 import { buildSnapshot, commitForModel, FsSource, readForModel, type RepoSnapshot, type RepoSource } from "./scanner.js";
 import type { Voice } from "./voices.js";
+import { streamChat, toChatMessages, toChatTools } from "./openai.js";
+import { PROVIDERS, type ProviderId } from "./providers.js";
 
 export const DEFAULT_MODEL = "claude-opus-5-5";
 export const DEFAULT_LOCAL_MODEL = "gpt-oss:20b";
@@ -15,8 +17,10 @@ export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
  * "anthropic" = Claude API with the user's key (or, on the web server, the server's key).
  * "ollama"    = a local model; nothing leaves the machine.
  * "hosted"    = Dad Pro on the Disappointed Dad server (it holds the key; snippets pass through it, never stored).
+ * "openai-compatible" = the user's own key for an OpenAI-compatible provider (OpenAI, Gemini, OpenRouter…),
+ *               chosen with `providerId`.
  */
-export type Provider = "anthropic" | "ollama" | "hosted";
+export type Provider = "anthropic" | "ollama" | "hosted" | "openai-compatible";
 
 export type History = Anthropic.Beta.BetaMessageParam[];
 
@@ -33,6 +37,8 @@ export interface SessionOptions {
   /** Reuse a snapshot built earlier (the web app caches it). */
   snapshot?: RepoSnapshot;
   provider?: Provider;
+  /** Which OpenAI-compatible provider, when provider = "openai-compatible". */
+  providerId?: ProviderId;
   ollamaUrl?: string;
   serverUrl?: string;
   hostedToken?: string;
@@ -118,7 +124,8 @@ export class InterviewSession {
 
   private constructor(
     private readonly opts: SessionOptions,
-    private readonly client: Anthropic,
+    /** Anthropic SDK client; null for OpenAI-compatible providers. */
+    private readonly client: Anthropic | null,
     private readonly source: RepoSource,
     private readonly store: ProgressStore,
     readonly snapshot: RepoSnapshot,
@@ -146,8 +153,14 @@ export class InterviewSession {
     const store = opts.progressStore ?? new FileProgressStore(opts.root ?? process.cwd());
     const local = opts.provider === "ollama";
 
-    let client: Anthropic;
-    if (local) {
+    let client: Anthropic | null;
+    if (opts.provider === "openai-compatible") {
+      const preset = opts.providerId ? PROVIDERS[opts.providerId] : undefined;
+      if (!preset || preset.kind !== "openai" || !preset.baseUrl) throw new Error("Choose a supported AI provider.");
+      if (!opts.apiKey) throw new Error(`Add your ${preset.label} API key first.`);
+      if (!(opts.model ?? preset.defaultModel)) throw new Error(`Choose a ${preset.label} model (e.g. from ${preset.keyUrl.split("/").slice(0, 3).join("/")}).`);
+      client = null;
+    } else if (local) {
       // Ollama serves an Anthropic-compatible Messages API; the token is a placeholder it ignores.
       client = new Anthropic({ baseURL: opts.ollamaUrl ?? DEFAULT_OLLAMA_URL, apiKey: "ollama" });
     } else if (opts.provider === "hosted") {
@@ -211,9 +224,20 @@ export class InterviewSession {
     on(event: "text", listener: (delta: string) => void): unknown;
     finalMessage(): Promise<Anthropic.Beta.BetaMessage | Anthropic.Message>;
   } {
+    if (this.opts.provider === "openai-compatible") {
+      const preset = PROVIDERS[this.opts.providerId!];
+      return streamChat({
+        baseUrl: preset.baseUrl!,
+        apiKey: this.opts.apiKey!,
+        model: (this.opts.model ?? preset.defaultModel)!,
+        messages: toChatMessages(this.system, this.messages),
+        tools: toChatTools(TOOLS),
+      });
+    }
+    const client = this.client!;
     if (this.local) {
       // Plain Messages API only: Ollama doesn't implement betas, fallbacks, effort, caching or strict tools.
-      return this.client.messages.stream({
+      return client.messages.stream({
         model: this.opts.model ?? DEFAULT_LOCAL_MODEL,
         max_tokens: 8192,
         system: this.system as Anthropic.TextBlockParam[],
@@ -221,7 +245,7 @@ export class InterviewSession {
         messages: this.messages as Anthropic.MessageParam[],
       });
     }
-    return this.client.beta.messages.stream({
+    return client.beta.messages.stream({
       model: this.opts.model ?? DEFAULT_MODEL,
       max_tokens: 64000,
       betas: ["server-side-fallback-2026-07-01"],

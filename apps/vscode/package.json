@@ -45,12 +45,12 @@
       },
       {
         "command": "disappointedDad.setApiKey",
-        "title": "Set Anthropic API Key",
+        "title": "Set API Key",
         "category": "Disappointed Dad"
       },
       {
         "command": "disappointedDad.clearApiKey",
-        "title": "Remove Anthropic API Key",
+        "title": "Remove API Keys",
         "category": "Disappointed Dad"
       }
     ],
@@ -73,6 +73,16 @@
           ],
           "default": "auto",
           "description": "Where Dad's brain lives."
+        },
+        "disappointedDad.byokProvider": {
+          "type": "string",
+          "enum": ["anthropic", "openai", "gemini", "openrouter", "deepseek", "groq"],
+          "description": "Which provider your own API key is for (set with \"Disappointed Dad: Set API Key\")."
+        },
+        "disappointedDad.byokModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model for a non-Anthropic provider, e.g. gemini-3.8-flash."
         },
         "disappointedDad.model": {
           "type": "string",

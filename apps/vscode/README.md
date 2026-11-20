@@ -18,7 +18,7 @@ Buttons: **Hint**, **Skip**, **Done**. **Disappointed Dad: Show Report Card** sh
 | Setting `disappointedDad.provider` | Setup |
 |---|---|
 | `auto` (default) | Uses your API key if set, else Dad Pro if you ran `dad login` |
-| `anthropic` | **Disappointed Dad: Set Anthropic API Key** (stored in VS Code's secret storage). Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| `anthropic` (your own key) | **Disappointed Dad: Set API Key**, then pick Anthropic, OpenAI, Google Gemini (has a free tier), OpenRouter, DeepSeek or Groq. Keys are stored in VS Code's secret storage. |
 | `ollama` | Local model via [Ollama](https://ollama.com): free, nothing leaves your machine |
 | `hosted` | Dad Pro subscribers: run `dad login` in a terminal (needs the `disappointed-dad` CLI) |
 

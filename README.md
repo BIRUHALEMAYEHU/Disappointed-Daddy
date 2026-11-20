@@ -18,7 +18,7 @@ Then pick how Dad thinks:
 
 | Option | Setup | Where your code snippets go |
 |---|---|---|
-| **Your own key** | `dad config set-key` or `ANTHROPIC_API_KEY` ([get a key](https://console.anthropic.com/settings/keys)) | Straight to Anthropic |
+| **Your own key** | `dad config set-key`: Anthropic (recommended), OpenAI, Google Gemini (has a free tier), OpenRouter, DeepSeek or Groq. Or set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`… and pass `--provider` | Straight to that provider |
 | **Local model** (free) | Install [Ollama](https://ollama.com), then `dad --local` | Nowhere: stays on your computer |
 | **Dad Pro** | `dad login` (paid accounts, no key needed) | Through our server to the AI; never stored or logged |
 

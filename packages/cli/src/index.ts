@@ -2,8 +2,8 @@ import { execFile } from "node:child_process";
 import readline from "node:readline/promises";
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  DEFAULT_SERVER_URL, InterviewSession, loadProgress, loadProjectConfig, loadUserConfig, saveUserConfig, userConfigPath,
-  type Mode, type Progress, type Provider, type UserConfig, type Voice,
+  DEFAULT_SERVER_URL, InterviewSession, isProviderId, looksLikeApiKey, looksLikeModel, PROVIDERS, ProviderError, loadProgress, loadProjectConfig, loadUserConfig, saveUserConfig, userConfigPath,
+  type Mode, type Progress, type Provider, type ProviderId, type UserConfig, type Voice,
 } from "@disappointed-dad/core";
 
 const c = {
@@ -30,6 +30,7 @@ Run inside the project you want to be grilled on.
 
   --hard                Harder questions, more constraint twists
   --endless             Keeps going until you type /done
+  --provider <name>     anthropic, openai, gemini, openrouter, deepseek or groq (your own key)
   --model <id>          Model to use (default claude-opus-5-5, or gpt-oss:20b with --local)
   --local               Use a local Ollama model: free, and nothing leaves your machine
   --ollama-url <url>    Ollama address (default http://localhost:11434)
@@ -38,7 +39,7 @@ Run inside the project you want to be grilled on.
 During a session: /hint  /skip  /done  /quit
 
 Setup, pick one:
-  dad config set-key    Your own Anthropic key (or set ANTHROPIC_API_KEY)
+  dad config set-key    Your own key: Anthropic, OpenAI, Gemini (free tier), OpenRouter, DeepSeek, Groq
   dad --local           Ollama on your machine (dad config use-local makes it the default)
   dad login             Dad Pro subscribers: sign in with GitHub, no key needed
 
@@ -68,6 +69,7 @@ interface Parsed {
   local: boolean;
   hosted: boolean;
   ollamaUrl?: string;
+  providerId?: ProviderId;
 }
 
 function parse(argv: string[]): Parsed {
@@ -82,6 +84,14 @@ function parse(argv: string[]): Parsed {
     else if (a === "--model") p.model = argv[++i];
     else if (a === "--local") p.local = true;
     else if (a === "--hosted") p.hosted = true;
+    else if (a === "--provider") {
+      const id = (argv[++i] ?? "").toLowerCase();
+      if (!isProviderId(id)) {
+        console.error(`Unknown provider "${id}". Choose one of: ${Object.keys(PROVIDERS).join(", ")}`);
+        process.exit(1);
+      }
+      p.providerId = id;
+    }
     else if (a === "--ollama-url") { p.ollamaUrl = argv[++i]; p.local = true; }
     else if (a === "-h" || a === "--help") positional.unshift("help");
     else positional.push(a);
@@ -148,9 +158,28 @@ async function resolveVoice(rl: readline.Interface, defaultVoice: Voice, p: Pars
 }
 
 /** Which backend to use: explicit flag > saved default > whatever credentials exist. */
+/** Environment variables people already use for each provider's key. */
+const ENV_KEYS: Record<ProviderId, string[]> = {
+  anthropic: ["ANTHROPIC_API_KEY"],
+  openai: ["OPENAI_API_KEY"],
+  gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+  deepseek: ["DEEPSEEK_API_KEY"],
+  groq: ["GROQ_API_KEY"],
+};
+
+function keyFor(id: ProviderId, config: UserConfig): string | undefined {
+  for (const name of ENV_KEYS[id]) if (process.env[name]) return process.env[name];
+  return id === "anthropic" ? config.apiKey : config.keys?.[id];
+}
+
+/** The OpenAI-compatible provider in use (flag > saved choice). */
+const byokProviderId = (p: Parsed, config: UserConfig): ProviderId | undefined => p.providerId ?? config.providerId;
+
 function pickProvider(p: Parsed, config: UserConfig): Provider {
   if (p.local) return "ollama";
   if (p.hosted) return "hosted";
+  if (p.providerId) return p.providerId === "anthropic" ? "anthropic" : "openai-compatible";
   if (config.provider) return config.provider;
   if (process.env.ANTHROPIC_API_KEY || config.apiKey) return "anthropic";
   if (config.hostedToken) return "hosted";
@@ -215,7 +244,13 @@ async function logout() {
 async function whoami() {
   const config = loadUserConfig();
   const provider = pickProvider({ local: false, hosted: false } as Parsed, config);
-  console.log(`Default mode: ${c.bold(provider === "ollama" ? "local (Ollama)" : provider === "hosted" ? "Dad Pro" : "your own Anthropic key")}`);
+  const byok = config.providerId ? PROVIDERS[config.providerId] : undefined;
+  console.log(`Default mode: ${c.bold(
+    provider === "ollama" ? "local (Ollama)"
+    : provider === "hosted" ? "Dad Pro"
+    : provider === "openai-compatible" && byok ? `your own ${byok.label} key (${config.providerModel ?? byok.defaultModel ?? "no model chosen"})`
+    : "your own Anthropic key",
+  )}`);
   if (!config.hostedToken) return console.log(c.dim("Not signed in. (Only needed for Dad Pro: dad login)"));
   const res = await fetch(`${serverUrl(config)}/api/me`, { headers: { authorization: `Bearer ${config.hostedToken}` } }).catch(() => null);
   if (!res?.ok) return console.log(c.yellow("Your login is invalid or the server is unreachable. Run: dad login"));
@@ -227,6 +262,15 @@ async function whoami() {
 
 function explainError(err: unknown, provider: Provider) {
   const local = provider === "ollama";
+  if (err instanceof ProviderError) {
+    const hint =
+      err.status === 401 || err.status === 403 ? " Your key was rejected: check it, or set a new one with dad config set-key."
+      : err.status === 404 ? " That model may not exist for this provider: pick another with --model."
+      : err.status === 429 ? " You've hit the provider's rate limit or quota. Wait a bit and try again."
+      : "";
+    console.error(c.red(`\n${err.message}${hint}`));
+    return;
+  }
   if (local && err instanceof Anthropic.APIConnectionError) {
     console.error(c.red("\nCan't reach Ollama. Is it running? Start it with: ollama serve"));
   } else if (local && err instanceof Anthropic.NotFoundError) {
@@ -282,9 +326,29 @@ export async function main(argv: string[], defaultVoice: Voice) {
     if (p.command === "config") {
       const config = loadUserConfig();
       if (p.rest[0] === "set-key") {
-        const key = await ask(rl, "Paste your Anthropic API key (stored in your home folder, not this project): ");
-        if (key) saveUserConfig({ ...config, apiKey: key });
-        console.log(`Saved to ${userConfigPath()}`);
+        const ids = Object.keys(PROVIDERS) as ProviderId[];
+        console.log("\nWhich AI provider is your key for?");
+        ids.forEach((id, i) => console.log(`  ${i + 1}. ${PROVIDERS[id].label}${PROVIDERS[id].note ? c.dim(` (${PROVIDERS[id].note})`) : ""}`));
+        const choice = p.providerId ?? ids[Number(await ask(rl, "Number: ")) - 1];
+        if (!choice) return console.log("No provider chosen.");
+        const preset = PROVIDERS[choice];
+        console.log(c.dim(`Get a key at ${preset.keyUrl}`));
+        const key = await ask(rl, `Paste your ${preset.label} API key (stored in your home folder, not this project): `);
+        if (!key) return console.log("No key entered.");
+        if (!looksLikeApiKey(key)) return console.log("That doesn't look like an API key (no spaces, at least 16 characters).");
+        let model = preset.defaultModel;
+        if (choice !== "anthropic") {
+          const typed = await ask(rl, preset.defaultModel ? `Model [${preset.defaultModel}]: ` : "Model name (see the provider's model list): ");
+          model = typed || preset.defaultModel;
+          if (!model || !looksLikeModel(model)) return console.log("A model name is needed for this provider.");
+        }
+        saveUserConfig(
+          choice === "anthropic"
+            ? { ...config, apiKey: key, provider: "anthropic" }
+            : { ...config, keys: { ...config.keys, [choice]: key }, providerId: choice, providerModel: model, provider: "openai-compatible" },
+        );
+        console.log(`Saved to ${userConfigPath()}. Dad will use ${preset.label}${choice === "anthropic" ? "" : ` (${model})`}.`);
+        if (choice === "gemini") console.log(c.dim("Note: on Gemini's free tier, Google may use your prompts (including code snippets) to improve its products."));
       } else if (p.rest[0] === "lock-daddy") {
         saveUserConfig({ ...config, daddyUnlocked: false });
         console.log("Daddy mode locked again.");
@@ -318,9 +382,15 @@ export async function main(argv: string[], defaultVoice: Voice) {
     }
 
     const config = loadUserConfig();
+    const byokId = provider === "openai-compatible" ? byokProviderId(p, config) : undefined;
+    if (provider === "openai-compatible" && (!byokId || !keyFor(byokId, config))) {
+      const label = byokId ? PROVIDERS[byokId].label : "that provider";
+      console.log(`\nNo ${label} key found. Run ${c.cyan("dad config set-key")}${byokId ? ` or set ${ENV_KEYS[byokId][0]}` : ""}.\n`);
+      return;
+    }
     if (provider === "anthropic" && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN && !config.apiKey) {
       console.log(`\n"Before we talk, I need a brain." Pick one:\n
-  ${c.cyan("dad config set-key")}    Use your own Anthropic API key (console.anthropic.com)
+  ${c.cyan("dad config set-key")}    Use your own key: Anthropic, OpenAI, Gemini (has a free tier), OpenRouter…
   ${c.cyan("dad --local")}           Use a local Ollama model (free, nothing leaves your machine)
   ${c.cyan("dad login")}             Dad Pro subscribers: no key needed\n`);
       return;
@@ -343,8 +413,9 @@ export async function main(argv: string[], defaultVoice: Voice) {
       topic: p.rest.join(" ") || undefined,
       hard: p.hard,
       endless: p.endless,
-      model: p.model ?? (local ? undefined : config.model),
-      apiKey: process.env.ANTHROPIC_API_KEY ? undefined : config.apiKey,
+      providerId: byokId,
+      model: p.model ?? (local ? undefined : byokId ? config.providerModel : config.model),
+      apiKey: byokId ? keyFor(byokId, config) : process.env.ANTHROPIC_API_KEY ? undefined : config.apiKey,
     });
     console.log(c.dim(`${session.snapshot.fileCount} files in ${session.snapshot.name}. Commands: /hint /skip /done /quit\n`));
 

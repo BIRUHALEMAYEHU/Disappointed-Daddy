@@ -31,22 +31,37 @@ function writeLocal(key: string, value: string) {
   }
 }
 
-/** The user's API key lives only in this browser: sessionStorage by default, localStorage if they ask. */
-const KEY_SLOT = "dd_anthropic_key";
-function loadKey(): { key: string; remembered: boolean } {
+/** Providers a user can bring a key for. Mirrors packages/core/src/providers.ts (the server enforces the real list). */
+const PROVIDERS = [
+  { id: "anthropic", label: "Anthropic (Claude)", defaultModel: "claude-opus-5-5", keyUrl: "https://console.anthropic.com/settings/keys", note: "recommended" },
+  { id: "gemini", label: "Google Gemini", defaultModel: "gemini-3.8-flash", keyUrl: "https://aistudio.google.com/apikey", note: "has a free tier" },
+  { id: "openai", label: "OpenAI (GPT)", defaultModel: "", keyUrl: "https://platform.openai.com/api-keys", note: "" },
+  { id: "openrouter", label: "OpenRouter (many models)", defaultModel: "", keyUrl: "https://openrouter.ai/keys", note: "" },
+  { id: "deepseek", label: "DeepSeek", defaultModel: "", keyUrl: "https://platform.deepseek.com/api_keys", note: "" },
+  { id: "groq", label: "Groq", defaultModel: "", keyUrl: "https://console.groq.com/keys", note: "" },
+] as const;
+type ProviderId = (typeof PROVIDERS)[number]["id"];
+
+/** API keys live only in this browser, one per provider: sessionStorage by default, localStorage if they ask. */
+const keySlot = (p: ProviderId) => `dd_key_${p}`;
+function loadKey(p: ProviderId): { key: string; remembered: boolean } {
   try {
-    const remembered = localStorage.getItem(KEY_SLOT);
+    const remembered = localStorage.getItem(keySlot(p)) ?? (p === "anthropic" ? localStorage.getItem("dd_anthropic_key") : null);
     if (remembered) return { key: remembered, remembered: true };
-    return { key: sessionStorage.getItem(KEY_SLOT) ?? "", remembered: false };
+    return { key: sessionStorage.getItem(keySlot(p)) ?? (p === "anthropic" ? sessionStorage.getItem("dd_anthropic_key") ?? "" : ""), remembered: false };
   } catch {
     return { key: "", remembered: false };
   }
 }
-function storeKey(key: string, remember: boolean) {
+function storeKey(p: ProviderId, key: string, remember: boolean) {
   try {
-    localStorage.removeItem(KEY_SLOT);
-    sessionStorage.removeItem(KEY_SLOT);
-    if (key) (remember ? localStorage : sessionStorage).setItem(KEY_SLOT, key);
+    localStorage.removeItem(keySlot(p));
+    sessionStorage.removeItem(keySlot(p));
+    if (p === "anthropic") {
+      localStorage.removeItem("dd_anthropic_key"); // old single-provider slot
+      sessionStorage.removeItem("dd_anthropic_key");
+    }
+    if (key) (remember ? localStorage : sessionStorage).setItem(keySlot(p), key);
   } catch {
     /* storage unavailable: the key is still kept in memory for this page */
   }
@@ -69,6 +84,9 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
   const [repo, setRepo] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [rememberKey, setRememberKey] = useState(false);
+  const [provider, setProvider] = useState<ProviderId>("anthropic");
+  const [model, setModel] = useState("");
+  const preset = PROVIDERS.find((p) => p.id === provider)!;
   const [mode, setMode] = useState<Mode>("talk");
   const [topic, setTopic] = useState("");
   const [hard, setHard] = useState(false);
@@ -84,10 +102,22 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
 
   useEffect(() => {
     setRepo(readLocal("dd_repo") ?? "");
-    const saved = loadKey();
+    const savedProvider = readLocal("dd_provider");
+    const p = (PROVIDERS.some((x) => x.id === savedProvider) ? savedProvider : "anthropic") as ProviderId;
+    setProvider(p);
+    setModel(readLocal(`dd_model_${p}`) ?? "");
+    const saved = loadKey(p);
     setApiKey(saved.key);
     setRememberKey(saved.remembered);
   }, []);
+
+  function chooseProvider(p: ProviderId) {
+    setProvider(p);
+    setModel(readLocal(`dd_model_${p}`) ?? "");
+    const saved = loadKey(p);
+    setApiKey(saved.key);
+    setRememberKey(saved.remembered);
+  }
   // Braces matter: an effect must return nothing or a cleanup function. Newer browsers make
   // scrollIntoView() return a Promise, which React would later try to call as cleanup and crash.
   useEffect(() => {
@@ -136,7 +166,10 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
       const res = await fetch("/api/interview", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ repo, mode, voice, topic: topic || undefined, hard, history: history.current, message, apiKey: apiKey.trim() || undefined }),
+        body: JSON.stringify({
+          repo, mode, voice, topic: topic || undefined, hard, history: history.current, message,
+          ...(apiKey.trim() ? { apiKey: apiKey.trim(), provider, model: model.trim() || undefined } : {}),
+        }),
       });
       if (!res.ok || !res.body) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
@@ -177,7 +210,9 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
   async function start(e: FormEvent) {
     e.preventDefault();
     writeLocal("dd_repo", repo);
-    storeKey(apiKey.trim(), rememberKey);
+    writeLocal("dd_provider", provider);
+    writeLocal(`dd_model_${provider}`, model.trim());
+    storeKey(provider, apiKey.trim(), rememberKey);
     history.current = [];
     setLines([]);
     setStarted(true);
@@ -212,21 +247,45 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
           {mode === "topic" && <input className="field" required placeholder="e.g. auth, database, caching" value={topic} onChange={(e) => setTopic(e.target.value)} />}
           <label className="check"><input type="checkbox" checked={hard} onChange={(e) => setHard(e.target.checked)} /> Hard mode (more twists, no easy questions)</label>
           <label>
-            <span className="label">Your Anthropic API key{isPro ? " (optional on Pro)" : ""}</span>
+            <span className="label">AI provider</span>
+            <select className="field" value={provider} onChange={(e) => chooseProvider(e.target.value as ProviderId)}>
+              {PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}{p.note ? ` (${p.note})` : ""}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">Your {preset.label} API key{isPro ? " (optional on Pro)" : ""}</span>
             <input
               className="field"
               type="password"
               autoComplete="off"
               spellCheck={false}
               required={!isPro}
-              placeholder="sk-ant-…"
+              placeholder="Paste your key"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
           </label>
+          {provider !== "anthropic" && (
+            <label>
+              <span className="label">Model{preset.defaultModel ? "" : " (required)"}</span>
+              <input
+                className="field"
+                autoComplete="off"
+                spellCheck={false}
+                required={!preset.defaultModel && Boolean(apiKey.trim())}
+                placeholder={preset.defaultModel || "e.g. the model name from your provider's docs"}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            </label>
+          )}
           <p className="muted small" style={{ margin: 0 }}>
-            Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.
+            Get a key at <a href={preset.keyUrl} target="_blank" rel="noreferrer">{new URL(preset.keyUrl).hostname}</a>.
             It stays in this browser and is sent only with your interview messages. It&rsquo;s never stored on our servers.
+            {provider === "gemini" && <> On Gemini&rsquo;s free tier, Google may use what you send (including code snippets) to improve its products, and people may review it.</>}
+            {provider !== "anthropic" && <> Dad is tuned for Claude; other models may ask vaguer questions.</>}
             {!isPro && <> No key? <a href="/pro">Get Dad Pro</a>.</>}
           </p>
           <label className="check small">

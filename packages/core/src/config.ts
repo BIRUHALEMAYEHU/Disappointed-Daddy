@@ -6,7 +6,11 @@ import path from "node:path";
 export interface UserConfig {
   apiKey?: string;
   model?: string;
-  provider?: "anthropic" | "ollama" | "hosted";
+  provider?: "anthropic" | "ollama" | "hosted" | "openai-compatible";
+  /** Bring-your-own-key for OpenAI-compatible providers: which one, its model, and keys per provider. */
+  providerId?: import("./providers.js").ProviderId;
+  providerModel?: string;
+  keys?: Partial<Record<import("./providers.js").ProviderId, string>>;
   daddyUnlocked?: boolean;
   /** Hosted mode: personal token from `dad login`, and which server issued it. */
   hostedToken?: string;
