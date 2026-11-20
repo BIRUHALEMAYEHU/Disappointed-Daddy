@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { decrypt, encrypt, seal, sha256, unseal } from "./crypto";
 import { db, userById, type User } from "./db";
+
+export { isPro } from "./plans";
 import { appUrl } from "./env";
 
 export const SESSION_COOKIE = "dd_session";
@@ -44,12 +46,10 @@ export async function userFromBearer(req: Request): Promise<User | null> {
   const header = req.headers.get("authorization") ?? "";
   const match = header.match(/^Bearer (dd_[A-Za-z0-9_-]{20,})$/);
   if (!match) return null;
-  const [user] = await db()<User[]>`
+  const [row] = await db()<{ userId: number }[]>`
     update cli_tokens set last_used_at = now() where token_hash = ${sha256(match[1])}
-    returning user_id::int as id,
-      (select login from users where id = cli_tokens.user_id) as login,
-      (select plan from users where id = cli_tokens.user_id) as plan`;
-  return user ?? null;
+    returning user_id::int as "userId"`;
+  return row ? userById(row.userId) : null;
 }
 
 /** Only allow same-site relative redirects like "/cli/authorize?code=X". */

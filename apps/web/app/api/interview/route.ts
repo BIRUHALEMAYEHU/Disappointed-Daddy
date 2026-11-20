@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { InterviewSession, parseGithubRepo, type History, type Mode, type Voice } from "@disappointed-dad/core";
-import { currentUser, githubToken, isSameOrigin } from "@/lib/auth";
+import { currentUser, githubToken, isPro, isSameOrigin } from "@/lib/auth";
 import { incrementUsage } from "@/lib/db";
 import { byokDailyRequests, env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { DbProgressStore, loadRepo } from "@/lib/interview";
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
 
   // Whose AI account pays for this turn: the user's own key, or ours for Pro accounts. No free usage.
   const ownKey = body.apiKey?.trim();
-  if (!ownKey && user.plan !== "pro") return Response.json({ error: PRO_REQUIRED, needKey: true }, { status: 402 });
+  if (!ownKey && !isPro(user)) return Response.json({ error: PRO_REQUIRED, needKey: true }, { status: 402 });
   const limit = ownKey ? byokDailyRequests() : proDailyRequests();
   if ((await incrementUsage(user.id)) > limit) {
     return Response.json({ error: "Daily limit reached. It resets at midnight UTC." }, { status: 429 });

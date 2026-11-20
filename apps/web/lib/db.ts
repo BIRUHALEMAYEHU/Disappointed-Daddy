@@ -16,20 +16,26 @@ export type Plan = "none" | "pro";
 export interface User {
   id: number;
   login: string;
-  /** "pro" may use the hosted model (our key). Everyone else brings their own key. */
+  /** GitHub's numeric account ID, as a string (never changes, unlike the login). */
+  githubId: string;
+  /** Manual permanent override: "pro" may use the hosted model. Use lib/plans.ts isPro() to decide access. */
   plan: Plan;
+  /** Paid Pro access ends at this time (null = never paid). */
+  proUntil: Date | null;
 }
 
 export async function upsertGithubUser(githubId: number, login: string): Promise<User> {
   const [user] = await db()<User[]>`
     insert into users (github_id, login) values (${githubId}, ${login})
     on conflict (github_id) do update set login = excluded.login
-    returning id::int as id, login, plan`;
+    returning id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil"`;
   return user;
 }
 
 export async function userById(id: number): Promise<User | null> {
-  const [user] = await db()<User[]>`select id::int as id, login, plan from users where id = ${id}`;
+  const [user] = await db()<User[]>`
+    select id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil"
+    from users where id = ${id}`;
   return user ?? null;
 }
 

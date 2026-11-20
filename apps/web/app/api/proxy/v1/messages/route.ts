@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { TOOLS } from "@disappointed-dad/core";
-import { userFromBearer } from "@/lib/auth";
+import { isPro, userFromBearer } from "@/lib/auth";
 import { incrementUsage } from "@/lib/db";
 import { env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { apiError } from "@/lib/errors";
@@ -18,7 +18,7 @@ const MAX_OUTPUT_TOKENS = 16_000;
 export async function POST(req: Request) {
   const user = await userFromBearer(req);
   if (!user) return apiError(401, "authentication_error", "Not signed in. Run: dad login");
-  if (user.plan !== "pro") return apiError(402, "payment_required", PRO_REQUIRED);
+  if (!isPro(user)) return apiError(402, "payment_required", PRO_REQUIRED);
 
   const raw = await req.text();
   if (raw.length > MAX_BODY_BYTES) return apiError(413, "request_too_large", "This session got too long. Start a new one.");

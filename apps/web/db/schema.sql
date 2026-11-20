@@ -13,6 +13,10 @@ create table if not exists users (
 alter table users add column if not exists plan text not null default 'none'
   check (plan in ('none', 'pro'));
 
+-- Paid Pro access lasts until a date: card subscriptions (Polar) extend it on renewal,
+-- Birr payments (verify.et) add 30 days. plan = 'pro' remains a manual, permanent override.
+alter table users add column if not exists pro_until timestamptz;
+
 -- Personal tokens for the CLI. Only a SHA-256 hash is stored; the token itself is shown once.
 create table if not exists cli_tokens (
   token_hash    text primary key,

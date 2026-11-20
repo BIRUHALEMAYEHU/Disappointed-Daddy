@@ -1,4 +1,4 @@
-import { userFromBearer } from "@/lib/auth";
+import { isPro, userFromBearer } from "@/lib/auth";
 import { usageToday } from "@/lib/db";
 import { proDailyRequests } from "@/lib/env";
 import { apiError } from "@/lib/errors";
@@ -10,5 +10,11 @@ export async function GET(req: Request) {
   const user = await userFromBearer(req);
   if (!user) return apiError(401, "authentication_error", "Not signed in. Run: dad login");
   const used = await usageToday(user.id);
-  return Response.json({ login: user.login, plan: user.plan, used_today: used, daily_limit: proDailyRequests() });
+  return Response.json({
+    login: user.login,
+    plan: isPro(user) ? "pro" : "none",
+    pro_until: user.proUntil?.toISOString() ?? null,
+    used_today: used,
+    daily_limit: proDailyRequests(),
+  });
 }
