@@ -1,7 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { TOOLS } from "@disappointed-dad/core";
 import { isPro, userFromBearer } from "@/lib/auth";
-import { incrementUsage } from "@/lib/db";
+import { chargeUsage, incrementUsage } from "@/lib/db";
+import { meterSse } from "@/lib/meter";
+import { chargesCredit } from "@/lib/plans";
+import { costMicroUsd, priceFor } from "@/lib/pricing";
 import { env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { apiError } from "@/lib/errors";
 import { MAX_BODY_BYTES, problemWith } from "@/lib/validate";
@@ -18,7 +21,11 @@ const MAX_OUTPUT_TOKENS = 16_000;
 export async function POST(req: Request) {
   const user = await userFromBearer(req);
   if (!user) return apiError(401, "authentication_error", "Not signed in. Run: dad login");
-  if (!isPro(user)) return apiError(402, "payment_required", PRO_REQUIRED);
+  if (!isPro(user)) {
+    return apiError(402, "payment_required", user.creditMicroUsd > 0 || user.proUntil
+      ? "You're out of Dad Pro credit. Top up at https://disappointed-daddy.vercel.app/pro, or use your own key (dad config set-key)."
+      : PRO_REQUIRED);
+  }
 
   const raw = await req.text();
   if (raw.length > MAX_BODY_BYTES) return apiError(413, "request_too_large", "This session got too long. Start a new one.");
@@ -37,13 +44,20 @@ export async function POST(req: Request) {
   }
 
   const b = body as { messages: Anthropic.Beta.BetaMessageParam[]; system: Anthropic.Beta.BetaTextBlockParam[]; max_tokens?: number };
+  const metered = chargesCredit(user);
+  let maxTokens = Math.min(Number(b.max_tokens) || MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS);
+  if (metered) {
+    // Don't let one response cost much more than the remaining balance.
+    const affordable = Math.floor(user.creditMicroUsd / priceFor(hostedModel()).output);
+    maxTokens = Math.max(1024, Math.min(maxTokens, affordable));
+  }
   const client = new Anthropic({ apiKey: env("ANTHROPIC_API_KEY") });
   try {
     // The server picks the model, limits and tools; only the conversation comes from the client.
     const upstream = await client.beta.messages
       .create({
         model: hostedModel(),
-        max_tokens: Math.min(Number(b.max_tokens) || MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+        max_tokens: maxTokens,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         output_config: { effort: "medium" },
@@ -55,7 +69,20 @@ export async function POST(req: Request) {
       })
       .asResponse();
 
-    return new Response(upstream.body, {
+    const responseBody =
+      metered && upstream.ok && upstream.body
+        ? meterSse(upstream.body, async (usage, model) => {
+            await chargeUsage({
+              userId: user.id,
+              costMicroUsd: costMicroUsd(usage, hostedModel(), model),
+              model: model ?? hostedModel(),
+              inputTokens: (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
+              outputTokens: usage.output_tokens ?? 0,
+            });
+          })
+        : upstream.body;
+
+    return new Response(responseBody, {
       status: upstream.status,
       headers: { "content-type": upstream.headers.get("content-type") ?? "text/event-stream", "cache-control": "no-cache" },
     });

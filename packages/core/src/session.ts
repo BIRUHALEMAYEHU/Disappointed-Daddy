@@ -49,6 +49,8 @@ export interface SessionHandlers {
   onToolUse?: (name: string, detail: string) => void;
   onNotice?: (message: string) => void;
   onProgressCreated?: (where: string) => void;
+  /** Called after every model response with its token usage (used to meter hosted usage). */
+  onUsage?: (usage: Anthropic.Beta.BetaUsage | Anthropic.Usage, model: string) => void | Promise<void>;
 }
 
 /** The interviewer's tools. Exported so the hosted proxy can verify requests use exactly these. */
@@ -181,6 +183,7 @@ export class InterviewSession {
       const stream = this.createStream();
       stream.on("text", (delta: string) => h.onText(delta));
       const message = (await stream.finalMessage()) as Anthropic.Beta.BetaMessage;
+      await h.onUsage?.(message.usage, message.model);
 
       if (message.stop_reason === "refusal") {
         // Drop this exchange so the conversation can continue cleanly.

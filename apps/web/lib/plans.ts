@@ -17,14 +17,29 @@ export function compedGithubIds(): Set<string> {
   );
 }
 
-export type ProSource = "comped" | "manual" | "paid" | null;
+/**
+ * comped  = on the PRO_GITHUB_IDS allowlist (not charged)
+ * manual  = users.plan = 'pro' set in the database (not charged)
+ * legacy  = an old time-based grant still running (not charged)
+ * credit  = has prepaid credit; every hosted request is charged at real cost
+ */
+export type ProSource = "comped" | "manual" | "legacy" | "credit" | null;
 
-/** Why a user is Pro, or null if they aren't. */
-export function proSource(user: Pick<User, "githubId" | "plan" | "proUntil">, now = new Date()): ProSource {
+/** Smallest balance that may start a hosted request ($0.02). */
+export const MIN_CREDIT_MICRO_USD = 20_000;
+
+type PlanFields = Pick<User, "githubId" | "plan" | "proUntil" | "creditMicroUsd">;
+
+/** Why a user may use the hosted model, or null if they may not. */
+export function proSource(user: PlanFields, now = new Date()): ProSource {
   if (compedGithubIds().has(user.githubId)) return "comped";
   if (user.plan === "pro") return "manual";
-  if (user.proUntil && user.proUntil.getTime() > now.getTime()) return "paid";
+  if (user.proUntil && user.proUntil.getTime() > now.getTime()) return "legacy";
+  if ((user.creditMicroUsd ?? 0) >= MIN_CREDIT_MICRO_USD) return "credit";
   return null;
 }
 
-export const isPro = (user: Pick<User, "githubId" | "plan" | "proUntil">) => proSource(user) !== null;
+export const isPro = (user: PlanFields) => proSource(user) !== null;
+
+/** Whether hosted usage should be charged to this user's credit. */
+export const chargesCredit = (user: PlanFields) => proSource(user) === "credit";

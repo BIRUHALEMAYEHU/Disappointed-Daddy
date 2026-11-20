@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { birrConfig, evaluatePayment, normalizeReference, receiverMatches } from "../lib/birr.ts";
+import { birrConfig, creditForBirr, evaluatePayment, normalizeReference, receiverMatches } from "../lib/birr.ts";
 
 const cfg = birrConfig({
-  BIRR_PRICE: "300",
-  BIRR_DAYS: "30",
+  BIRR_PER_USD: "250",
+  BIRR_MIN_TOPUP: "250",
   BIRR_ACCOUNTS: JSON.stringify({
     telebirr: { account: "0912345678", name: "Dad Owner" },
     cbe: { account: "1000123457441", name: "Dad Owner" },
@@ -12,26 +12,24 @@ const cfg = birrConfig({
 });
 const now = new Date("2026-11-20T12:00:00Z");
 const good = {
-  status: "success", verified: true, amount: 300, currency: "ETB",
+  status: "success", verified: true, amount: 500, currency: "ETB",
   senderName: "Payer", receiverAccount: "1****7441", timestamp: "2026-11-19T10:00:00Z",
   settlementAccountMatch: { matched: true },
 };
 
-test("config: only well-formed accounts for supported banks", () => {
-  const c = birrConfig({ BIRR_ACCOUNTS: '{"telebirr":{"account":"09","name":"x"},"boa":{"account":"1","name":"y"},"cbe":{"account":""}}' });
+test("config: only well-formed accounts for supported banks; bad numbers fall back", () => {
+  const c = birrConfig({ BIRR_PER_USD: "abc", BIRR_ACCOUNTS: '{"telebirr":{"account":"09","name":"x"},"boa":{"account":"1","name":"y"},"cbe":{"account":""}}' });
   assert.deepEqual(Object.keys(c.accounts), ["telebirr"]);
+  assert.equal(c.perUsd, 250);
   assert.deepEqual(birrConfig({ BIRR_ACCOUNTS: "not json" }).accounts, {});
 });
 
-test("valid payment grants 30 days", () => {
+test("credit: 500 ETB at 250/USD = $2.00, rounded down", () => {
+  assert.equal(creditForBirr(500, cfg), 2_000_000);
+  assert.equal(creditForBirr(333, cfg), 1_332_000);
   const r = evaluatePayment(good, "cbe", cfg, now);
   assert.equal(r.ok, true);
-  assert.equal(r.days, 30);
-});
-
-test("paying double grants 60 days; capped at 12 periods", () => {
-  assert.equal(evaluatePayment({ ...good, amount: "650" }, "cbe", cfg, now).days, 60);
-  assert.equal(evaluatePayment({ ...good, amount: 99999 }, "cbe", cfg, now).days, 360);
+  assert.equal(r.creditMicroUsd, 2_000_000);
 });
 
 test("rejects: not verified, failed, missing", () => {
@@ -40,8 +38,9 @@ test("rejects: not verified, failed, missing", () => {
   assert.equal(evaluatePayment(undefined, "cbe", cfg, now).ok, false);
 });
 
-test("rejects: too little, wrong currency, bank we don't accept", () => {
-  assert.match(evaluatePayment({ ...good, amount: 299.99 }, "cbe", cfg, now).reason, /less than the price/);
+test("rejects: below minimum, above maximum, wrong currency, bank we don't accept", () => {
+  assert.match(evaluatePayment({ ...good, amount: 249.99 }, "cbe", cfg, now).reason, /minimum top-up/);
+  assert.match(evaluatePayment({ ...good, amount: 60_000 }, "cbe", cfg, now).reason, /manual confirmation/);
   assert.equal(evaluatePayment({ ...good, currency: "USD" }, "cbe", cfg, now).ok, false);
   assert.equal(evaluatePayment(good, "dashen", cfg, now).ok, false);
 });
@@ -58,8 +57,8 @@ test("rejects old and future-dated payments", () => {
 
 test("receiver matching: masked accounts and phone formats", () => {
   assert.equal(receiverMatches("1****7441", "1000123457441", false), true);
-  assert.equal(receiverMatches("1****441", "1000123457441", false), false); // too few visible digits
-  assert.equal(receiverMatches("2****7441", "1000123457441", false), false); // wrong first digit
+  assert.equal(receiverMatches("1****441", "1000123457441", false), false);
+  assert.equal(receiverMatches("2****7441", "1000123457441", false), false);
   assert.equal(receiverMatches("+251912345678", "0912345678", true), true);
   assert.equal(receiverMatches("2519****5678", "0912345678", true), true);
   assert.equal(receiverMatches("2519****0000", "0912345678", true), false);

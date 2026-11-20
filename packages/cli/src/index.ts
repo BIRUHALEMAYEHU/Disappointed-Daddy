@@ -219,10 +219,10 @@ async function whoami() {
   if (!config.hostedToken) return console.log(c.dim("Not signed in. (Only needed for Dad Pro: dad login)"));
   const res = await fetch(`${serverUrl(config)}/api/me`, { headers: { authorization: `Bearer ${config.hostedToken}` } }).catch(() => null);
   if (!res?.ok) return console.log(c.yellow("Your login is invalid or the server is unreachable. Run: dad login"));
-  const me = (await res.json()) as { login: string; plan: string; used_today: number; daily_limit: number };
-  console.log(me.plan === "pro"
-    ? `Signed in as ${me.login} (Pro): ${me.used_today}/${me.daily_limit} requests used today`
-    : `Signed in as ${me.login} (no Pro plan): use your own key with dad config set-key`);
+  const me = (await res.json()) as { login: string; plan: string; pro_source: string | null; credit_usd: number; used_today: number; daily_limit: number };
+  if (me.pro_source === "credit") console.log(`Signed in as ${me.login} (Pro): $${me.credit_usd.toFixed(2)} credit left`);
+  else if (me.plan === "pro") console.log(`Signed in as ${me.login} (Pro, on the house): ${me.used_today}/${me.daily_limit} requests today`);
+  else console.log(`Signed in as ${me.login}: no Pro credit. Top up at ${serverUrl(config)}/pro, or use your own key (dad config set-key)`);
 }
 
 function explainError(err: unknown, provider: Provider) {

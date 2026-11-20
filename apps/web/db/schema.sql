@@ -67,6 +67,27 @@ create table if not exists birr_payments (
   unique (bank, reference)
 );
 
+-- Prepaid AI credit for hosted usage, in micro-dollars (1 USD = 1,000,000) so sums are exact integers.
+alter table users add column if not exists credit_micro_usd bigint not null default 0;
+
+-- Every change to a balance: top-ups (positive) and AI usage charges (negative).
+create table if not exists credit_ledger (
+  id                bigserial primary key,
+  user_id           bigint not null references users(id) on delete cascade,
+  delta_micro_usd   bigint not null,
+  balance_after     bigint not null,
+  kind              text not null check (kind in ('topup', 'usage', 'adjustment')),
+  detail            text,
+  input_tokens      integer,
+  output_tokens     integer,
+  created_at        timestamptz not null default now()
+);
+create index if not exists credit_ledger_user_time on credit_ledger (user_id, created_at desc);
+
+-- Birr payments now grant credit instead of days.
+alter table birr_payments add column if not exists credit_micro_usd bigint;
+alter table birr_payments alter column days_granted drop not null;
+
 -- Every verification attempt (accepted or not), to rate-limit attempts and protect verify.et credits.
 create table if not exists payment_attempts (
   id          bigserial primary key,
@@ -79,6 +100,7 @@ alter table users            enable row level security;
 alter table web_progress     enable row level security;
 alter table birr_payments    enable row level security;
 alter table payment_attempts enable row level security;
+alter table credit_ledger    enable row level security;
 alter table cli_tokens    enable row level security;
 alter table device_codes  enable row level security;
 alter table usage_daily   enable row level security;

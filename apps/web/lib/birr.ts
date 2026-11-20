@@ -22,15 +22,19 @@ export interface ReceivingAccount {
 }
 
 export interface BirrConfig {
-  price: number;
-  days: number;
+  /** Birr charged per 1 USD of AI credit (the margin is built into this rate). */
+  perUsd: number;
+  /** Smallest accepted payment, in Birr. */
+  minTopup: number;
+  /** Largest single payment we accept, in Birr (sanity limit). */
+  maxTopup: number;
   /** Reject payments older than this many days. */
   maxAgeDays: number;
   accounts: Partial<Record<Bank, ReceivingAccount>>;
 }
 
 /**
- * Reads BIRR_PRICE, BIRR_DAYS and BIRR_ACCOUNTS from the environment.
+ * Reads BIRR_PER_USD, BIRR_MIN_TOPUP and BIRR_ACCOUNTS from the environment.
  * BIRR_ACCOUNTS is JSON, e.g. {"telebirr":{"account":"0912345678","name":"Biruh A."}}
  */
 export function birrConfig(env: Record<string, string | undefined> = process.env): BirrConfig {
@@ -47,13 +51,18 @@ export function birrConfig(env: Record<string, string | undefined> = process.env
       accounts[bank] = { account: a.account.trim(), name: a.name.trim() };
     }
   }
+  const num = (v: string | undefined, d: number) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
   return {
-    price: Number(env.BIRR_PRICE ?? 300),
-    days: Number(env.BIRR_DAYS ?? 30),
-    maxAgeDays: Number(env.BIRR_MAX_AGE_DAYS ?? 7),
+    perUsd: num(env.BIRR_PER_USD, 250),
+    minTopup: num(env.BIRR_MIN_TOPUP, 250),
+    maxTopup: num(env.BIRR_MAX_TOPUP, 50_000),
+    maxAgeDays: num(env.BIRR_MAX_AGE_DAYS, 7),
     accounts,
   };
 }
+
+/** Credit (micro-dollars) bought by a Birr amount, rounded down. */
+export const creditForBirr = (amount: number, cfg: BirrConfig) => Math.floor((amount / cfg.perUsd) * 1_000_000);
 
 const digits = (s: string) => s.replace(/\D/g, "");
 
@@ -100,7 +109,7 @@ export interface VerifyItem {
 }
 
 export type Evaluation =
-  | { ok: true; amount: number; periods: number; days: number; payerName: string | null; receiverAccount: string | null; paidAt: Date | null }
+  | { ok: true; amount: number; creditMicroUsd: number; payerName: string | null; receiverAccount: string | null; paidAt: Date | null }
   | { ok: false; reason: string };
 
 /**
@@ -120,8 +129,11 @@ export function evaluatePayment(item: VerifyItem | undefined, bank: Bank, cfg: B
   if (!toUs) return { ok: false, reason: `That payment didn't go to our ${BANKS[bank]} account (${ours.account}).` };
 
   const amount = Number(item.amount);
-  if (!Number.isFinite(amount) || amount < cfg.price) {
-    return { ok: false, reason: `The amount (${Number.isFinite(amount) ? amount : "?"} ETB) is less than the price (${cfg.price} ETB).` };
+  if (!Number.isFinite(amount) || amount < cfg.minTopup) {
+    return { ok: false, reason: `The amount (${Number.isFinite(amount) ? amount : "?"} ETB) is less than the minimum top-up (${cfg.minTopup} ETB).` };
+  }
+  if (amount > cfg.maxTopup) {
+    return { ok: false, reason: `Payments above ${cfg.maxTopup} ETB need manual confirmation. Please contact us.` };
   }
 
   const paidAt = item.timestamp ? new Date(item.timestamp) : null;
@@ -131,13 +143,10 @@ export function evaluatePayment(item: VerifyItem | undefined, bank: Bank, cfg: B
     if (ageDays < -1) return { ok: false, reason: "That payment's date is in the future." };
   }
 
-  // Paying for several periods at once is allowed (e.g. 600 ETB = 60 days), up to a year.
-  const periods = Math.min(Math.floor(amount / cfg.price), 12);
   return {
     ok: true,
     amount,
-    periods,
-    days: periods * cfg.days,
+    creditMicroUsd: creditForBirr(amount, cfg),
     payerName: item.senderName ?? null,
     receiverAccount: item.receiverAccount ?? null,
     paidAt: paidAt && !Number.isNaN(paidAt.getTime()) ? paidAt : null,

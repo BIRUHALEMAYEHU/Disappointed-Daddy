@@ -78,6 +78,7 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
   const [lines, setLines] = useState<Line[]>([]);
   const [input, setInput] = useState("");
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [creditMicro, setCreditMicro] = useState<number | null>(null);
   const history = useRef<unknown[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -144,7 +145,8 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
           const raw = buffer.slice(0, nl);
           buffer = buffer.slice(nl + 1);
           if (!raw.trim()) continue;
-          const e = JSON.parse(raw) as { type: string; delta?: string; kind?: string; detail?: string; message?: string; history?: unknown[] };
+          const e = JSON.parse(raw) as { type: string; delta?: string; kind?: string; detail?: string; message?: string; history?: unknown[]; balanceMicroUsd?: number };
+          if (e.type === "credit" && typeof e.balanceMicroUsd === "number") setCreditMicro(e.balanceMicroUsd);
           if (e.type === "text") append(e.delta ?? "");
           else if (e.type === "tool") add({ who: "tool", text: `${name} is looking at ${e.kind === "commit" ? "commit " : ""}${e.detail}` });
           else if (e.type === "notice") add({ who: "notice", text: e.message ?? "" });
@@ -237,6 +239,11 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
         <div className="chat-head">
           <strong>{repo}</strong>
           <span className="muted small"> · {MODES.find((m) => m.value === mode)?.label}{hard ? " · hard" : ""}{voice === "daddy" ? " · 😏" : ""}</span>
+          {creditMicro !== null && (
+            <a href="/pro" className="muted small" style={{ marginLeft: 8 }}>
+              · credit ${(Math.floor(Math.max(creditMicro, 0) / 10_000) / 100).toFixed(2)}
+            </a>
+          )}
           <button className="link small right" onClick={() => setStarted(false)} disabled={busy}>New session</button>
         </div>
         <div className="lines">

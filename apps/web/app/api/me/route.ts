@@ -1,4 +1,5 @@
 import { isPro, userFromBearer } from "@/lib/auth";
+import { proSource } from "@/lib/plans";
 import { usageToday } from "@/lib/db";
 import { proDailyRequests } from "@/lib/env";
 import { apiError } from "@/lib/errors";
@@ -13,7 +14,8 @@ export async function GET(req: Request) {
   return Response.json({
     login: user.login,
     plan: isPro(user) ? "pro" : "none",
-    pro_until: user.proUntil?.toISOString() ?? null,
+    pro_source: proSource(user),
+    credit_usd: Math.floor(user.creditMicroUsd / 10_000) / 100,
     used_today: used,
     daily_limit: proDailyRequests(),
   });

@@ -1,7 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { InterviewSession, parseGithubRepo, type History, type Mode, type Voice } from "@disappointed-dad/core";
 import { currentUser, githubToken, isPro, isSameOrigin } from "@/lib/auth";
-import { incrementUsage } from "@/lib/db";
+import { chargeUsage, incrementUsage } from "@/lib/db";
+import { chargesCredit } from "@/lib/plans";
+import { costMicroUsd } from "@/lib/pricing";
+
+class OutOfCredit extends Error {}
 import { byokDailyRequests, env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { DbProgressStore, loadRepo } from "@/lib/interview";
 
@@ -96,10 +100,25 @@ export async function POST(req: Request) {
           apiKey: ownKey ?? env("ANTHROPIC_API_KEY"),
           model: hostedModel(),
         });
+        // Prepaid Pro: charge every model call at real cost; stop as soon as the balance runs out.
+        const metered = !ownKey && chargesCredit(user);
         const handlers = {
           onText: (delta: string) => emit({ type: "text", delta }),
           onToolUse: (kind: string, detail: string) => emit({ type: "tool", kind, detail }),
           onNotice: (message: string) => emit({ type: "notice", message }),
+          onUsage: metered
+            ? async (usage: Parameters<typeof costMicroUsd>[0] & { input_tokens?: number; output_tokens?: number }, model: string) => {
+                const balance = await chargeUsage({
+                  userId: user.id,
+                  costMicroUsd: costMicroUsd(usage, hostedModel(), model),
+                  model,
+                  inputTokens: (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
+                  outputTokens: usage.output_tokens ?? 0,
+                });
+                emit({ type: "credit", balanceMicroUsd: balance });
+                if (balance <= 0) throw new OutOfCredit();
+              }
+            : undefined,
         };
         if (body.message === null) await session.start(handlers);
         else await session.send(body.message, handlers);
@@ -107,7 +126,8 @@ export async function POST(req: Request) {
       } catch (err) {
         // Never include the raw error: an SDK error could echo request details.
         const message =
-          err instanceof Anthropic.AuthenticationError ? (ownKey ? "Anthropic rejected that API key. Check it at console.anthropic.com." : "The server's API key is invalid.")
+          err instanceof OutOfCredit ? "You're out of Dad Pro credit. Top up at /pro, or add your own API key."
+          : err instanceof Anthropic.AuthenticationError ? (ownKey ? "Anthropic rejected that API key. Check it at console.anthropic.com." : "The server's API key is invalid.")
           : err instanceof Anthropic.PermissionDeniedError ? "That API key isn't allowed to use this model. Check your Anthropic account."
           : err instanceof Anthropic.RateLimitError ? "Rate limited by Anthropic. Try again in a minute."
           : err instanceof Anthropic.APIError && err.status === 400 && /credit|billing/i.test(err.message) ? "Your Anthropic account is out of credit."

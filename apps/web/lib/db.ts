@@ -20,21 +20,25 @@ export interface User {
   githubId: string;
   /** Manual permanent override: "pro" may use the hosted model. Use lib/plans.ts isPro() to decide access. */
   plan: Plan;
-  /** Paid Pro access ends at this time (null = never paid). */
+  /** Legacy time-based Pro (no longer granted; kept so older grants still count). */
   proUntil: Date | null;
+  /** Prepaid AI credit in micro-dollars (1 USD = 1,000,000). Hosted usage is charged against it. */
+  creditMicroUsd: number;
 }
 
 export async function upsertGithubUser(githubId: number, login: string): Promise<User> {
   const [user] = await db()<User[]>`
     insert into users (github_id, login) values (${githubId}, ${login})
     on conflict (github_id) do update set login = excluded.login
-    returning id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil"`;
+    returning id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil",
+      credit_micro_usd::float8 as "creditMicroUsd"`;
   return user;
 }
 
 export async function userById(id: number): Promise<User | null> {
   const [user] = await db()<User[]>`
-    select id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil"
+    select id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil",
+      credit_micro_usd::float8 as "creditMicroUsd"
     from users where id = ${id}`;
   return user ?? null;
 }
@@ -81,7 +85,7 @@ export async function birrReferenceUsed(bank: string, reference: string): Promis
 }
 
 /**
- * Records a verified Birr payment and extends Pro, atomically. Returns the new Pro end date,
+ * Records a verified Birr payment and adds its credit, atomically. Returns the new balance (micro-dollars),
  * or null if the reference was already used (the unique constraint makes double-spending impossible,
  * even when two requests race).
  */
@@ -90,24 +94,51 @@ export async function grantBirrPayment(p: {
   bank: string;
   reference: string;
   amount: number;
-  days: number;
+  creditMicroUsd: number;
   payerName: string | null;
   receiverAccount: string | null;
   paidAt: Date | null;
-}): Promise<Date | null> {
+}): Promise<number | null> {
   return db().begin(async (sql) => {
     const inserted = await sql`
-      insert into birr_payments (user_id, bank, reference, amount, payer_name, receiver_account, paid_at, days_granted)
-      values (${p.userId}, ${p.bank}, ${p.reference}, ${p.amount}, ${p.payerName}, ${p.receiverAccount}, ${p.paidAt}, ${p.days})
+      insert into birr_payments (user_id, bank, reference, amount, payer_name, receiver_account, paid_at, credit_micro_usd)
+      values (${p.userId}, ${p.bank}, ${p.reference}, ${p.amount}, ${p.payerName}, ${p.receiverAccount}, ${p.paidAt}, ${p.creditMicroUsd})
       on conflict (bank, reference) do nothing
       returning id`;
     if (inserted.length === 0) return null;
-    const [user] = await sql<{ proUntil: Date }[]>`
-      update users
-      set pro_until = greatest(coalesce(pro_until, now()), now()) + make_interval(days => ${p.days})
+    const [user] = await sql<{ balance: number }[]>`
+      update users set credit_micro_usd = credit_micro_usd + ${p.creditMicroUsd}
       where id = ${p.userId}
-      returning pro_until as "proUntil"`;
-    return user.proUntil;
+      returning credit_micro_usd::float8 as balance`;
+    await sql`
+      insert into credit_ledger (user_id, delta_micro_usd, balance_after, kind, detail)
+      values (${p.userId}, ${p.creditMicroUsd}, ${user.balance}, 'topup', ${`birr:${p.bank}:${p.reference}`})`;
+    return user.balance;
+  });
+}
+
+/**
+ * Charges real AI cost against a user's credit and logs it. The balance may dip slightly below zero
+ * on the last request (we can't know a response's size in advance); the next request is then refused.
+ * Returns the new balance.
+ */
+export async function chargeUsage(p: {
+  userId: number;
+  costMicroUsd: number;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}): Promise<number> {
+  if (p.costMicroUsd <= 0) return (await userById(p.userId))?.creditMicroUsd ?? 0;
+  return db().begin(async (sql) => {
+    const [user] = await sql<{ balance: number }[]>`
+      update users set credit_micro_usd = credit_micro_usd - ${p.costMicroUsd}
+      where id = ${p.userId}
+      returning credit_micro_usd::float8 as balance`;
+    await sql`
+      insert into credit_ledger (user_id, delta_micro_usd, balance_after, kind, detail, input_tokens, output_tokens)
+      values (${p.userId}, ${-p.costMicroUsd}, ${user.balance}, 'usage', ${p.model}, ${p.inputTokens}, ${p.outputTokens})`;
+    return user.balance;
   });
 }
 

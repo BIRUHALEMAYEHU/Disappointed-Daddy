@@ -20,11 +20,11 @@ export async function GET() {
   const cfg = birrConfig();
   const accounts = (Object.keys(cfg.accounts) as Bank[]).map((bank) => ({ bank, label: BANKS[bank], ...cfg.accounts[bank]! }));
   return Response.json({
-    price: cfg.price,
-    days: cfg.days,
+    birrPerUsd: cfg.perUsd,
+    minTopup: cfg.minTopup,
     accounts,
     available: accounts.length > 0 && Boolean(process.env.VERIFY_ET_API_KEY),
-    pro: { source: proSource(user), until: user.proUntil?.toISOString() ?? null },
+    pro: { source: proSource(user), creditMicroUsd: user.creditMicroUsd },
   });
 }
 
@@ -73,17 +73,17 @@ export async function POST(req: Request) {
   const result = evaluatePayment(outcome.item, bank, cfg);
   if (!result.ok) return fail(result.reason, 422);
 
-  const proUntil = await grantBirrPayment({
+  const balance = await grantBirrPayment({
     userId: user.id,
     bank,
     reference,
     amount: result.amount,
-    days: result.days,
+    creditMicroUsd: result.creditMicroUsd,
     payerName: result.payerName,
     receiverAccount: result.receiverAccount,
     paidAt: result.paidAt,
   });
-  if (!proUntil) return fail("That transaction has already been used to activate Pro.", 409);
+  if (balance === null) return fail("That transaction has already been used to activate Pro.", 409);
 
-  return Response.json({ ok: true, days: result.days, proUntil: proUntil.toISOString() });
+  return Response.json({ ok: true, addedMicroUsd: result.creditMicroUsd, balanceMicroUsd: balance });
 }
