@@ -68,7 +68,7 @@ export default function Pro({ login }: { login: string }) {
 
       <div className="card">
         <strong>Your balance</strong>
-        <p style={{ margin: "8px 0 0", fontSize: "1.6rem", fontWeight: 700 }}>{free ? "Unlimited" : usd(info.pro.creditMicroUsd)}</p>
+        <p className="mono" style={{ margin: "8px 0 0", fontSize: "2rem", fontWeight: 600, color: "var(--ink)" }}>{free ? "Unlimited" : usd(info.pro.creditMicroUsd)}</p>
         <p className="muted small" style={{ margin: "4px 0 0" }}>
           {free
             ? `${login}, you're on the house. Dad's treat.`
@@ -116,8 +116,8 @@ export default function Pro({ login }: { login: string }) {
             <button className="btn" type="submit" disabled={busy || !reference.trim() || !bank}>{busy ? "Checking with the bank…" : "Verify payment"}</button>
           </div>
           {message && (
-            <p className={message.kind === "error" ? "error" : message.kind === "ok" ? "" : "muted"} style={{ margin: 0 }} role="status">
-              {message.kind === "ok" ? "✅ " : message.kind === "wait" ? "⏳ " : ""}{message.text}
+            <p className={message.kind === "error" ? "error" : message.kind === "ok" ? "g-solid" : "muted"} style={{ margin: 0, fontWeight: message.kind === "ok" ? 650 : undefined }} role="status">
+              {message.text}
             </p>
           )}
           <p className="muted small" style={{ margin: 0 }}>

@@ -155,7 +155,7 @@ class InterviewPanel {
 
   static async open(context: vscode.ExtensionContext, opts: PanelOptions) {
     const name = opts.voice === "daddy" ? "Daddy" : "Dad";
-    const panel = vscode.window.createWebviewPanel("disappointedDad", `${opts.voice === "daddy" ? "😏" : "🧔"} ${name}`, vscode.ViewColumn.Beside, {
+    const panel = vscode.window.createWebviewPanel("disappointedDad", `${name}: interview`, vscode.ViewColumn.Beside, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [],

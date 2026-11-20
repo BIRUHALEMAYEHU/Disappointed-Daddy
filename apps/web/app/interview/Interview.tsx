@@ -83,7 +83,7 @@ function DadText({ text }: { text: string }) {
     <>
       {text.split("\n").map((line, i) => {
         const m = line.match(/^\s*(SOLID|PARTIAL|WEAK)\b(.*)$/);
-        if (m) return <div key={i} className={`verdict v-${m[1].toLowerCase()}`}><b>{m[1]}</b>{m[2]}</div>;
+        if (m) return <div key={i} className={`verdict v-${m[1].toLowerCase()}`}><span className="grade-name">{m[1]}</span>{m[2]}</div>;
         return <div key={i}>{line || " "}</div>;
       })}
     </>
@@ -273,7 +273,7 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
   if (!started) {
     return (
       <>
-        <h1>🧔 Sit down, {login}.</h1>
+        <h1>Sit down, {login}.</h1>
         <p className="quote">&ldquo;Which project are we talking about?&rdquo;</p>
         <form onSubmit={start} className="card stack">
           <label>
@@ -396,7 +396,7 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
             >
               Start
             </button>
-            <button type="button" className="link small" onClick={toggleDaddy}>{voice === "daddy" ? "😏 Daddy mode on (turn off)" : "🤫"}</button>
+            <button type="button" className="link small" onClick={toggleDaddy}>{voice === "daddy" ? "Daddy mode is on (turn off)" : "Hidden mode"}</button>
           </div>
         </form>
         <p className="muted small">Dad reads your repo through GitHub. The conversation stays in this tab; only your grades are saved.</p>
@@ -410,18 +410,18 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
       <div className="chat">
         <div className="chat-head">
           <strong>{repo}</strong>
-          <span className="muted small"> · {MODES.find((m) => m.value === mode)?.label}{hard ? " · hard" : ""}{voice === "daddy" ? " · 😏" : ""}</span>
+          <span className="muted small">{MODES.find((m) => m.value === mode)?.label}{hard ? ", hard" : ""}{voice === "daddy" ? ", Daddy mode" : ""}</span>
           {creditMicro !== null && (
-            <a href="/pro" className="muted small" style={{ marginLeft: 8 }}>
-              · credit ${(Math.floor(Math.max(creditMicro, 0) / 10_000) / 100).toFixed(2)}
+            <a href="/pro" className="muted small">
+              Credit ${(Math.floor(Math.max(creditMicro, 0) / 10_000) / 100).toFixed(2)}
             </a>
           )}
           <button className="link small right" onClick={() => setStarted(false)} disabled={busy}>New session</button>
         </div>
         <div className="lines">
           {lines.map((l, i) =>
-            l.who === "dad" ? <div key={i} className="bubble dad"><span className="who">{name}</span><DadText text={l.text} /></div>
-            : l.who === "you" ? <div key={i} className="bubble you">{l.text}</div>
+            l.who === "dad" ? <div key={i} className="bubble dad"><span className="who">{name}</span><div><DadText text={l.text} /></div></div>
+            : l.who === "you" ? <div key={i} className="bubble you"><span className="who">You</span><div>{l.text}</div></div>
             : <div key={i} className={`meta ${l.who}`}>{l.text}</div>,
           )}
           {busy && <div className="meta tool">{name} is thinking…</div>}

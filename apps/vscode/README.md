@@ -1,4 +1,4 @@
-# 🧔 Disappointed Dad for VS Code
+# Disappointed Dad for VS Code
 
 > *"I'm not angry. I'm just disappointed you don't know why you used JWT."*
 
@@ -32,4 +32,4 @@ Dad never reads `.env` files, private keys or credential files, respects `.gitig
 
 ---
 
-<sub>🤫 Setting `disappointedDad.daddyMode`. Not for the office.</sub>
+<sub>Hidden setting: `disappointedDad.daddyMode`. Not for the office.</sub>

@@ -18,7 +18,7 @@ export default async function Authorize({ searchParams }: { searchParams: Promis
   if (status === "approved") {
     return (
       <>
-        <h1>✅ Terminal connected</h1>
+        <h1>Terminal connected</h1>
         <p>Go back to your terminal. &ldquo;Now, about your backend&hellip;&rdquo;</p>
       </>
     );

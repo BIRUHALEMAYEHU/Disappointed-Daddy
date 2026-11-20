@@ -17,7 +17,7 @@ const c = {
 };
 
 const HELP = `
-${c.bold("🧔 Disappointed Dad")}: "I'm not angry. I'm just disappointed you can't explain your own backend."
+${c.bold("Disappointed Dad")}: "I'm not angry. I'm just disappointed you can't explain your own backend."
 
 Run inside the project you want to be grilled on.
 
@@ -48,7 +48,7 @@ Account: dad whoami · dad logout
 `;
 
 const SECRET_HELP = `
-${c.pink(c.bold("🤫 Daddy mode"))} (opt-in, not for the office)
+${c.pink(c.bold("Daddy mode"))} (opt-in, not for the office)
 
   daddy                 Same interview, cheekier voice
   daddy harder          --hard
@@ -147,9 +147,9 @@ function proud(progress: Progress) {
   const topics = Object.values(progress.topics);
   const lastMock = progress.mocks[progress.mocks.length - 1];
   if (topics.length >= 5 && topics.every((t) => t.status === "solid") && (lastMock?.score ?? 0) >= 9) {
-    console.log(`\n🥲 "...I'm proud of you, kid. Don't tell your mother."\n`);
+    console.log(`\n"...I'm proud of you, kid. Don't tell your mother."\n`);
   } else {
-    console.log(`\n😐 "Proud? Let's not get ahead of ourselves." (Needs 5+ topics all solid and a 9+/10 sit-down.)\n`);
+    console.log(`\n"Proud? Let's not get ahead of ourselves." (Needs 5+ topics all solid and a 9+/10 sit-down.)\n`);
   }
 }
 
@@ -323,7 +323,7 @@ export async function main(argv: string[], defaultVoice: Voice) {
   }
 
   if (p.command === "help") {
-    console.log(HELP + (p.all || defaultVoice === "daddy" ? SECRET_HELP : c.dim("🤫 There's a hidden mode. Try: dad --help --all\n")));
+    console.log(HELP + (p.all || defaultVoice === "daddy" ? SECRET_HELP : c.dim("There's a hidden mode. Try: dad --help --all\n")));
     return;
   }
   if (p.command === "reportcard") return reportCard(loadProgress(root));

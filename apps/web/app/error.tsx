@@ -13,7 +13,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
 
   return (
     <>
-      <h1>😬 Dad tripped over something.</h1>
+      <h1>Dad tripped over something.</h1>
       <p className="quote">&ldquo;I&rsquo;m not angry. I&rsquo;m just&hellip; confused.&rdquo;</p>
       <div className="card">
         <strong>What went wrong</strong>

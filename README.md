@@ -1,4 +1,4 @@
-# 🧔 Disappointed Dad
+# Disappointed Dad
 
 > *"I'm not angry. I'm just disappointed you don't know why you used JWT."*
 
@@ -41,7 +41,7 @@ All three share the same interviewer; the terminal and VS Code also share your r
 | `dad sitdown` | Strict 5-question mock interview, scored /10 |
 | `dad topic auth` | Just one area |
 | `dad reportcard` | *"Auth: D-. I expected more."* |
-| `dad proud` | 🥲 Rare. Earn it. |
+| `dad proud` | Rare. Earn it. |
 
 Flags: `--hard` (tougher questions), `--endless` (keeps going until `/done`), `--model <id>`.
 During a session: `/hint`, `/skip`, `/done`, `/quit`.
@@ -81,4 +81,4 @@ skills/         the same interviewer as an agent skill (Claude Code, Cursor…)
 
 MIT licensed. See [LICENSE](LICENSE).
 
-<sub>🤫 There's a hidden mode. Run `dad --help --all`.</sub>
+<sub>There's a hidden mode. Run `dad --help --all`.</sub>
