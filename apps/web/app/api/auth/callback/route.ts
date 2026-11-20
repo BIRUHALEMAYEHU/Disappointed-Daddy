@@ -32,11 +32,12 @@ export async function GET(req: Request) {
     headers: { authorization: `Bearer ${access_token}`, accept: "application/vnd.github+json", "user-agent": "disappointed-dad" },
   });
   if (!userRes.ok) return fail("Could not read your GitHub profile.");
-  const gh = (await userRes.json()) as { id: number; login: string };
+  const gh = (await userRes.json()) as { id: number; login: string; created_at?: string };
+  const createdAt = gh.created_at ? new Date(gh.created_at) : null;
 
   // The GitHub token is never stored server-side: it goes into an encrypted cookie in the user's browser,
   // so web interviews can read public repos with the user's own rate limit.
-  const user = await upsertGithubUser(gh.id, gh.login);
+  const user = await upsertGithubUser(gh.id, gh.login, createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null);
   const res = NextResponse.redirect(`${appUrl()}${safeNext(saved.next)}`);
   res.cookies.set(sessionCookie(user.id));
   res.cookies.set(githubCookie(access_token));

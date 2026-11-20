@@ -2,7 +2,12 @@
 
 Powers **interviews in the browser** (`/interview`: sign in with GitHub, paste a public repo and your own Anthropic key) and **Dad Pro** (`dad login`: paid accounts use the server's key).
 
-There is no free tier: hosted usage (the server's key) requires `users.plan = 'pro'`. Everyone else brings their own key, which the browser sends with each turn and the server uses once and never stores or logs.
+**Three ways to pay for an interview:**
+- **Free** (website only): Google's free Gemini API (`GEMINI_API_KEY`, model `FREE_MODEL`). 2 interviews and 40 turns per user per day, GitHub accounts at least 30 days old, users confirm they're 18+ and accept that Google may use free-tier data. Not offered in the EU/EEA, Switzerland or the UK (Google's terms allow only its paid API there); country comes from Vercel's `x-vercel-ip-country`.
+- **Own key**: Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek or Groq (fixed base URLs only).
+- **Dad Pro**: prepaid credit on the server's Anthropic key, routed by `proMode`: auto (Opus for sit-downs/Hard, Sonnet otherwise), max (Opus), economy (Haiku). Models: `PRO_MODEL_MAX`, `PRO_MODEL_STANDARD`, `PRO_MODEL_ECONOMY`.
+
+Historical note: hosted usage (the server's key) requires Pro. Everyone else brings their own key, which the browser sends with each turn and the server uses once and never stores or logs.
 
 ```
 dad login ─► /api/cli/start ─► browser: /cli/authorize (GitHub sign-in, "Yes, connect it")

@@ -24,6 +24,9 @@ export type Provider = "anthropic" | "ollama" | "hosted" | "openai-compatible";
 
 export type History = Anthropic.Beta.BetaMessageParam[];
 
+/** Server-side refusal fallbacks exist for Opus/Sonnet/Fable models, not Haiku. */
+export const supportsFallbacks = (model: string) => !/haiku/i.test(model);
+
 export interface SessionOptions {
   mode: Mode;
   voice: Voice;
@@ -42,6 +45,8 @@ export interface SessionOptions {
   ollamaUrl?: string;
   serverUrl?: string;
   hostedToken?: string;
+  /** Dad Pro model routing (hosted only): "auto" (default), "max" or "economy". */
+  proMode?: "auto" | "max" | "economy";
   topic?: string;
   hard?: boolean;
   endless?: boolean;
@@ -166,7 +171,12 @@ export class InterviewSession {
     } else if (opts.provider === "hosted") {
       if (!opts.serverUrl || !opts.hostedToken) throw new Error("Hosted mode needs you to sign in first: dad login");
       // The proxy speaks the Messages API, so the normal SDK works against it with a bearer token.
-      client = new Anthropic({ baseURL: `${opts.serverUrl.replace(/\/$/, "")}/api/proxy`, apiKey: null, authToken: opts.hostedToken });
+      client = new Anthropic({
+        baseURL: `${opts.serverUrl.replace(/\/$/, "")}/api/proxy`,
+        apiKey: null,
+        authToken: opts.hostedToken,
+        defaultHeaders: opts.proMode ? { "x-dad-pro-mode": opts.proMode } : undefined,
+      });
     } else {
       client = opts.apiKey ? new Anthropic({ apiKey: opts.apiKey }) : new Anthropic();
     }
@@ -245,11 +255,12 @@ export class InterviewSession {
         messages: this.messages as Anthropic.MessageParam[],
       });
     }
+    const model = this.opts.model ?? DEFAULT_MODEL;
     return client.beta.messages.stream({
-      model: this.opts.model ?? DEFAULT_MODEL,
+      model,
       max_tokens: 64000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      // Haiku has no server-side refusal fallback; sending the option there would be rejected.
+      ...(supportsFallbacks(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       output_config: { effort: this.opts.effort ?? "medium" },
       cache_control: { type: "ephemeral" },
       system: this.system,

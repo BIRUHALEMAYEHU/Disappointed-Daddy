@@ -35,6 +35,7 @@ Run inside the project you want to be grilled on.
   --local               Use a local Ollama model: free, and nothing leaves your machine
   --ollama-url <url>    Ollama address (default http://localhost:11434)
   --hosted              Use Dad Pro, no API key needed (after dad login)
+  --pro-mode <mode>     Dad Pro model: auto (default), max (strongest), economy (cheapest)
 
 During a session: /hint  /skip  /done  /quit
 
@@ -70,6 +71,7 @@ interface Parsed {
   hosted: boolean;
   ollamaUrl?: string;
   providerId?: ProviderId;
+  proMode?: "auto" | "max" | "economy";
 }
 
 function parse(argv: string[]): Parsed {
@@ -84,6 +86,14 @@ function parse(argv: string[]): Parsed {
     else if (a === "--model") p.model = argv[++i];
     else if (a === "--local") p.local = true;
     else if (a === "--hosted") p.hosted = true;
+    else if (a === "--pro-mode") {
+      const m = argv[++i];
+      if (m !== "auto" && m !== "max" && m !== "economy") {
+        console.error('--pro-mode must be "auto", "max" or "economy".');
+        process.exit(1);
+      }
+      p.proMode = m;
+    }
     else if (a === "--provider") {
       const id = (argv[++i] ?? "").toLowerCase();
       if (!isProviderId(id)) {
@@ -408,6 +418,7 @@ export async function main(argv: string[], defaultVoice: Voice) {
       ollamaUrl: p.ollamaUrl,
       serverUrl: serverUrl(config),
       hostedToken: config.hostedToken,
+      proMode: p.proMode,
       mode,
       voice,
       topic: p.rest.join(" ") || undefined,

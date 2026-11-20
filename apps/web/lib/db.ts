@@ -24,23 +24,59 @@ export interface User {
   proUntil: Date | null;
   /** Prepaid AI credit in micro-dollars (1 USD = 1,000,000). Hosted usage is charged against it. */
   creditMicroUsd: number;
+  /** When the GitHub account was created (free-tier abuse check). */
+  githubCreatedAt: Date | null;
+  /** When the user confirmed 18+ and accepted the free tier's data terms. */
+  freeTermsAcceptedAt: Date | null;
 }
 
-export async function upsertGithubUser(githubId: number, login: string): Promise<User> {
+export async function upsertGithubUser(githubId: number, login: string, githubCreatedAt: Date | null = null): Promise<User> {
   const [user] = await db()<User[]>`
-    insert into users (github_id, login) values (${githubId}, ${login})
-    on conflict (github_id) do update set login = excluded.login
+    insert into users (github_id, login, github_created_at) values (${githubId}, ${login}, ${githubCreatedAt})
+    on conflict (github_id) do update
+      set login = excluded.login,
+          github_created_at = coalesce(excluded.github_created_at, users.github_created_at)
     returning id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil",
-      credit_micro_usd::float8 as "creditMicroUsd"`;
+      credit_micro_usd::float8 as "creditMicroUsd", github_created_at as "githubCreatedAt",
+      free_terms_accepted_at as "freeTermsAcceptedAt"`;
   return user;
 }
 
 export async function userById(id: number): Promise<User | null> {
   const [user] = await db()<User[]>`
     select id::int as id, login, github_id::text as "githubId", plan, pro_until as "proUntil",
-      credit_micro_usd::float8 as "creditMicroUsd"
+      credit_micro_usd::float8 as "creditMicroUsd", github_created_at as "githubCreatedAt",
+      free_terms_accepted_at as "freeTermsAcceptedAt"
     from users where id = ${id}`;
   return user ?? null;
+}
+
+export async function setGithubCreatedAt(userId: number, createdAt: Date): Promise<void> {
+  await db()`update users set github_created_at = ${createdAt} where id = ${userId}`;
+}
+
+export async function acceptFreeTerms(userId: number): Promise<void> {
+  await db()`update users set free_terms_accepted_at = now() where id = ${userId} and free_terms_accepted_at is null`;
+}
+
+export async function freeUsageToday(userId: number): Promise<{ interviews: number; turns: number }> {
+  const [row] = await db()<{ interviews: number; turns: number }[]>`
+    select free_interviews as interviews, free_turns as turns from usage_daily
+    where user_id = ${userId} and day = (now() at time zone 'utc')::date`;
+  return row ?? { interviews: 0, turns: 0 };
+}
+
+/** Counts one free turn (and one free interview when starting), atomically. Returns today's new totals. */
+export async function recordFreeUse(userId: number, starting: boolean): Promise<{ interviews: number; turns: number }> {
+  const add = starting ? 1 : 0;
+  const [row] = await db()<{ interviews: number; turns: number }[]>`
+    insert into usage_daily (user_id, day, requests, free_interviews, free_turns)
+    values (${userId}, (now() at time zone 'utc')::date, 0, ${add}, 1)
+    on conflict (user_id, day) do update
+      set free_interviews = usage_daily.free_interviews + ${add},
+          free_turns = usage_daily.free_turns + 1
+    returning free_interviews as interviews, free_turns as turns`;
+  return row;
 }
 
 /** Atomically adds one request to today's count and returns the new total. */

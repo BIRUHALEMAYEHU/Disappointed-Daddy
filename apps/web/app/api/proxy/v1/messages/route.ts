@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { TOOLS } from "@disappointed-dad/core";
+import { supportsFallbacks, TOOLS } from "@disappointed-dad/core";
 import { isPro, userFromBearer } from "@/lib/auth";
 import { chargeUsage, incrementUsage } from "@/lib/db";
 import { meterSse } from "@/lib/meter";
 import { chargesCredit } from "@/lib/plans";
 import { costMicroUsd, priceFor } from "@/lib/pricing";
-import { env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
+import { env, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
+import { interviewFromKickoff, isProMode, proModelFor } from "@/lib/routing";
 import { apiError } from "@/lib/errors";
 import { MAX_BODY_BYTES, problemWith } from "@/lib/validate";
 
@@ -44,11 +45,14 @@ export async function POST(req: Request) {
   }
 
   const b = body as { messages: Anthropic.Beta.BetaMessageParam[]; system: Anthropic.Beta.BetaTextBlockParam[]; max_tokens?: number };
+  // Pro routing: the CLI sends its chosen mode as a header; the interview type comes from the kickoff message.
+  const headerMode = req.headers.get("x-dad-pro-mode");
+  const model = proModelFor(isProMode(headerMode) ? headerMode : "auto", interviewFromKickoff(b.messages[0]?.content));
   const metered = chargesCredit(user);
   let maxTokens = Math.min(Number(b.max_tokens) || MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS);
   if (metered) {
     // Don't let one response cost much more than the remaining balance.
-    const affordable = Math.floor(user.creditMicroUsd / priceFor(hostedModel()).output);
+    const affordable = Math.floor(user.creditMicroUsd / priceFor(model).output);
     maxTokens = Math.max(1024, Math.min(maxTokens, affordable));
   }
   const client = new Anthropic({ apiKey: env("ANTHROPIC_API_KEY") });
@@ -56,10 +60,9 @@ export async function POST(req: Request) {
     // The server picks the model, limits and tools; only the conversation comes from the client.
     const upstream = await client.beta.messages
       .create({
-        model: hostedModel(),
+        model,
         max_tokens: maxTokens,
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
+        ...(supportsFallbacks(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
         output_config: { effort: "medium" },
         cache_control: { type: "ephemeral" },
         system: b.system.map(({ type, text }) => ({ type, text })),
@@ -71,11 +74,11 @@ export async function POST(req: Request) {
 
     const responseBody =
       metered && upstream.ok && upstream.body
-        ? meterSse(upstream.body, async (usage, model) => {
+        ? meterSse(upstream.body, async (usage, servedBy) => {
             await chargeUsage({
               userId: user.id,
-              costMicroUsd: costMicroUsd(usage, hostedModel(), model),
-              model: model ?? hostedModel(),
+              costMicroUsd: costMicroUsd(usage, model, servedBy),
+              model: servedBy ?? model,
               inputTokens: (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
               outputTokens: usage.output_tokens ?? 0,
             });

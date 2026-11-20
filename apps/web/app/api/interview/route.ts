@@ -9,8 +9,12 @@ import { chargesCredit } from "@/lib/plans";
 import { costMicroUsd } from "@/lib/pricing";
 
 class OutOfCredit extends Error {}
-import { byokDailyRequests, env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
+import { byokDailyRequests, env, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { DbProgressStore, loadRepo } from "@/lib/interview";
+import { freeModel } from "@/lib/free";
+import { isProMode, proModelFor, type ProMode } from "@/lib/routing";
+import { freeStatusFor } from "@/lib/free-server";
+import { recordFreeUse } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -39,6 +43,10 @@ interface Body {
   provider?: ProviderId;
   /** Model for OpenAI-compatible providers (defaults to the preset's model when it has one). */
   model?: string;
+  /** "free" = the free tier (Google's free Gemini API), when the user has no key and no Pro. */
+  tier?: "free";
+  /** Dad Pro model routing: auto (default), max or economy. */
+  proMode?: ProMode;
 }
 
 function parseBody(raw: string): Body | string {
@@ -56,6 +64,8 @@ function parseBody(raw: string): Body | string {
   if (b.message !== null && (typeof b.message !== "string" || !b.message.trim() || b.message.length > 8000)) return "Invalid message.";
   if (b.history.length === 0 && b.message !== null) return "Start the session first.";
   if (b.mode === "topic" && (typeof b.topic !== "string" || !b.topic.trim())) return "Which topic?";
+  if (b.tier !== undefined && b.tier !== "free") return "Invalid tier.";
+  if (b.proMode !== undefined && !isProMode(b.proMode)) return "Invalid Pro mode.";
   if (b.provider !== undefined && !isProviderId(b.provider)) return "Unsupported AI provider.";
   if (b.apiKey !== undefined && (typeof b.apiKey !== "string" || !looksLikeApiKey(b.apiKey.trim()))) {
     return "That doesn't look like an API key. Paste it again without spaces.";
@@ -79,17 +89,27 @@ export async function POST(req: Request) {
   const body = parseBody(await req.text());
   if (typeof body === "string") return Response.json({ error: body }, { status: 400 });
 
-  // Whose AI account pays for this turn: the user's own key, or ours for Pro accounts. No free usage.
+  // Who pays for this turn: the user's own key, the free tier (Google's free Gemini API), or Pro (our key).
   const ownKey = body.apiKey?.trim();
-  const byokProvider: ProviderId = body.provider ?? "anthropic";
-  if (!ownKey && !isPro(user)) return Response.json({ error: PRO_REQUIRED, needKey: true }, { status: 402 });
-  const limit = ownKey ? byokDailyRequests() : proDailyRequests();
-  if ((await incrementUsage(user.id)) > limit) {
-    return Response.json({ error: "Daily limit reached. It resets at midnight UTC." }, { status: 429 });
+  const free = !ownKey && body.tier === "free";
+  const byokProvider: ProviderId = free ? "gemini" : body.provider ?? "anthropic";
+  if (free) {
+    // Every rule is checked on every turn: region, account age, accepted terms, daily limits.
+    const status = await freeStatusFor(user, req, body.message === null);
+    if (!status.ok) return Response.json({ error: status.message, freeBlock: status.block }, { status: status.block === "terms_not_accepted" ? 403 : 429 });
+    await recordFreeUse(user.id, body.message === null);
+  } else {
+    if (!ownKey && !isPro(user)) return Response.json({ error: PRO_REQUIRED, needKey: true }, { status: 402 });
+    const limit = ownKey ? byokDailyRequests() : proDailyRequests();
+    if ((await incrementUsage(user.id)) > limit) {
+      return Response.json({ error: "Daily limit reached. It resets at midnight UTC." }, { status: 429 });
+    }
   }
 
   const { owner, repo } = parseGithubRepo(body.repo)!;
   const encoder = new TextEncoder();
+  // Pro routing: which of our models handles this interview (only used when Pro pays).
+  const proModel = proModelFor(body.proMode ?? "auto", { mode: body.mode, hard: body.hard });
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -109,13 +129,15 @@ export async function POST(req: Request) {
           topic: body.topic,
           hard: body.hard,
           endless: body.endless,
-          // Own key: the provider the user chose. Otherwise Pro on our Anthropic key.
-          ...(ownKey && byokProvider !== "anthropic"
-            ? { provider: "openai-compatible" as const, providerId: byokProvider, apiKey: ownKey, model: body.model?.trim() || undefined }
-            : { provider: "anthropic" as const, apiKey: ownKey ?? env("ANTHROPIC_API_KEY"), model: ownKey ? body.model?.trim() || undefined : hostedModel() }),
+          // Free: Gemini free API. Own key: the provider the user chose. Otherwise Pro on our Anthropic key.
+          ...(free
+            ? { provider: "openai-compatible" as const, providerId: "gemini" as const, apiKey: env("GEMINI_API_KEY"), model: freeModel() }
+            : ownKey && byokProvider !== "anthropic"
+              ? { provider: "openai-compatible" as const, providerId: byokProvider, apiKey: ownKey, model: body.model?.trim() || undefined }
+              : { provider: "anthropic" as const, apiKey: ownKey ?? env("ANTHROPIC_API_KEY"), model: ownKey ? body.model?.trim() || undefined : proModel }),
         });
         // Prepaid Pro: charge every model call at real cost; stop as soon as the balance runs out.
-        const metered = !ownKey && chargesCredit(user);
+        const metered = !ownKey && !free && chargesCredit(user);
         const handlers = {
           onText: (delta: string) => emit({ type: "text", delta }),
           onToolUse: (kind: string, detail: string) => emit({ type: "tool", kind, detail }),
@@ -124,7 +146,7 @@ export async function POST(req: Request) {
             ? async (usage: Parameters<typeof costMicroUsd>[0] & { input_tokens?: number; output_tokens?: number }, model: string) => {
                 const balance = await chargeUsage({
                   userId: user.id,
-                  costMicroUsd: costMicroUsd(usage, hostedModel(), model),
+                  costMicroUsd: costMicroUsd(usage, proModel, model),
                   model,
                   inputTokens: (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
                   outputTokens: usage.output_tokens ?? 0,
@@ -144,7 +166,9 @@ export async function POST(req: Request) {
           : err instanceof ProviderError
             ? err.status === 401 || err.status === 403 ? `${PROVIDERS[byokProvider].label} rejected that API key.`
             : err.status === 404 ? "That model wasn't found for this provider. Check the model name."
-            : err.status === 429 ? `${PROVIDERS[byokProvider].label} rate limit or quota reached. Try again later.`
+            : err.status === 429
+              ? free ? "The free tier is busy right now (it shares one Google quota). Try again in a few minutes, or use your own key."
+                : `${PROVIDERS[byokProvider].label} rate limit or quota reached. Try again later.`
             : `${PROVIDERS[byokProvider].label} error: ${err.message.slice(0, 200)}`
           : err instanceof Anthropic.AuthenticationError ? (ownKey ? "Anthropic rejected that API key. Check it at console.anthropic.com." : "The server's API key is invalid.")
           : err instanceof Anthropic.PermissionDeniedError ? "That API key isn't allowed to use this model. Check your Anthropic account."

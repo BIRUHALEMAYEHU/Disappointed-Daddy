@@ -51,6 +51,12 @@ create table if not exists web_progress (
   primary key (user_id, repo)
 );
 
+-- Free tier (Gemini free API): eligibility and daily limits.
+alter table users add column if not exists github_created_at timestamptz;
+alter table users add column if not exists free_terms_accepted_at timestamptz;
+alter table usage_daily add column if not exists free_interviews integer not null default 0;
+alter table usage_daily add column if not exists free_turns integer not null default 0;
+
 -- Ethiopian payments verified through verify.et. Every accepted reference is stored once,
 -- so the same transaction can never unlock Pro twice.
 create table if not exists birr_payments (

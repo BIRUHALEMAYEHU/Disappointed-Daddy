@@ -42,6 +42,16 @@ const PROVIDERS = [
 ] as const;
 type ProviderId = (typeof PROVIDERS)[number]["id"];
 
+interface FreeInfo {
+  ok: boolean;
+  block: string | null;
+  message: string;
+  interviewsLeft: number;
+  terms: string;
+  accepted: boolean;
+  limits: { interviewsPerDay: number };
+}
+
 /** API keys live only in this browser, one per provider: sessionStorage by default, localStorage if they ask. */
 const keySlot = (p: ProviderId) => `dd_key_${p}`;
 function loadKey(p: ProviderId): { key: string; remembered: boolean } {
@@ -97,8 +107,18 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
   const [input, setInput] = useState("");
   const [progress, setProgress] = useState<Progress | null>(null);
   const [creditMicro, setCreditMicro] = useState<number | null>(null);
+  /** How Dad is paid for: the free tier, the user's own key, or Pro credit. */
+  const [tier, setTier] = useState<"free" | "key" | "pro">(isPro ? "pro" : "free");
+  const [freeInfo, setFreeInfo] = useState<FreeInfo | null>(null);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [proMode, setProMode] = useState<"auto" | "max" | "economy">("auto");
   const history = useRef<unknown[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
+
+  async function loadFree() {
+    const res = await fetch("/api/free").catch(() => null);
+    if (res?.ok) setFreeInfo((await res.json()) as FreeInfo);
+  }
 
   useEffect(() => {
     setRepo(readLocal("dd_repo") ?? "");
@@ -109,7 +129,11 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
     const saved = loadKey(p);
     setApiKey(saved.key);
     setRememberKey(saved.remembered);
-  }, []);
+    const savedTier = readLocal("dd_tier");
+    if (savedTier === "key" || (savedTier === "pro" && isPro) || (savedTier === "free" && !isPro)) setTier(savedTier);
+    else if (!isPro && saved.key) setTier("key");
+    loadFree();
+  }, [isPro]);
 
   function chooseProvider(p: ProviderId) {
     setProvider(p);
@@ -168,7 +192,13 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           repo, mode, voice, topic: topic || undefined, hard, history: history.current, message,
-          ...(apiKey.trim() ? { apiKey: apiKey.trim(), provider, model: model.trim() || undefined } : {}),
+          ...(tier === "free"
+            ? { tier: "free" }
+            : tier === "pro"
+              ? { proMode }
+            : tier === "key" && apiKey.trim()
+              ? { apiKey: apiKey.trim(), provider, model: model.trim() || undefined }
+              : {}),
         }),
       });
       if (!res.ok || !res.body) {
@@ -210,9 +240,21 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
   async function start(e: FormEvent) {
     e.preventDefault();
     writeLocal("dd_repo", repo);
-    writeLocal("dd_provider", provider);
-    writeLocal(`dd_model_${provider}`, model.trim());
-    storeKey(provider, apiKey.trim(), rememberKey);
+    writeLocal("dd_tier", tier);
+    if (tier === "key") {
+      writeLocal("dd_provider", provider);
+      writeLocal(`dd_model_${provider}`, model.trim());
+      storeKey(provider, apiKey.trim(), rememberKey);
+    }
+    if (tier === "free" && freeInfo && !freeInfo.accepted) {
+      const res = await fetch("/api/free", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ accept: acceptTerms }),
+      }).catch(() => null);
+      if (!res?.ok) return;
+      await loadFree();
+    }
     history.current = [];
     setLines([]);
     setStarted(true);
@@ -246,6 +288,61 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
           <p className="muted small">{MODES.find((m) => m.value === mode)?.hint}</p>
           {mode === "topic" && <input className="field" required placeholder="e.g. auth, database, caching" value={topic} onChange={(e) => setTopic(e.target.value)} />}
           <label className="check"><input type="checkbox" checked={hard} onChange={(e) => setHard(e.target.checked)} /> Hard mode (more twists, no easy questions)</label>
+          <span className="label">How should Dad think?</span>
+          <div className="modes">
+            {isPro && <button type="button" className={`chip ${tier === "pro" ? "on" : ""}`} onClick={() => setTier("pro")}>Dad Pro</button>}
+            {!isPro && <button type="button" className={`chip ${tier === "free" ? "on" : ""}`} onClick={() => setTier("free")}>Free</button>}
+            <button type="button" className={`chip ${tier === "key" ? "on" : ""}`} onClick={() => setTier("key")}>Your own API key</button>
+          </div>
+
+          {tier === "pro" && (
+            <div className="stack" style={{ gap: 6 }}>
+              <div className="modes">
+                {([
+                  ["auto", "Auto"],
+                  ["max", "Max"],
+                  ["economy", "Economy"],
+                ] as const).map(([v, label]) => (
+                  <button type="button" key={v} className={`chip ${proMode === v ? "on" : ""}`} onClick={() => setProMode(v)}>{label}</button>
+                ))}
+              </div>
+              <p className="muted small" style={{ margin: 0 }}>
+                {proMode === "auto" && "Best model for sit-downs and Hard mode, a cheaper strong model otherwise. Recommended."}
+                {proMode === "max" && "Our strongest model every time. Uses your credit about twice as fast."}
+                {proMode === "economy" && "Our cheapest model. Stretches your credit furthest; questions may be simpler."}
+              </p>
+            </div>
+          )}
+
+          {tier === "free" && (
+            <div className="stack" style={{ gap: 8 }}>
+              {!freeInfo ? (
+                <p className="muted small" style={{ margin: 0 }}>Checking the free tier…</p>
+              ) : freeInfo.block && freeInfo.block !== "terms_not_accepted" ? (
+                <p className="error small" style={{ margin: 0 }}>{freeInfo.message}</p>
+              ) : (
+                <>
+                  <p className="small" style={{ margin: 0 }}>
+                    Free: <b>{freeInfo.interviewsLeft} of {freeInfo.limits.interviewsPerDay}</b> interviews left today, on Google&rsquo;s Gemini.
+                    Want better questions? <a href="/pro">Dad Pro</a> uses Claude.
+                  </p>
+                  {!freeInfo.accepted && (
+                    <label className="check small" style={{ alignItems: "flex-start" }}>
+                      <input type="checkbox" required checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} style={{ marginTop: 4 }} />
+                      <span>{freeInfo.terms}</span>
+                    </label>
+                  )}
+                  {freeInfo.accepted && (
+                    <p className="muted small" style={{ margin: 0 }}>
+                      Reminder: on the free tier Google may use what you send, including code snippets, to improve its products.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {tier === "key" && <>
           <label>
             <span className="label">AI provider</span>
             <select className="field" value={provider} onChange={(e) => chooseProvider(e.target.value as ProviderId)}>
@@ -255,13 +352,13 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
             </select>
           </label>
           <label>
-            <span className="label">Your {preset.label} API key{isPro ? " (optional on Pro)" : ""}</span>
+            <span className="label">Your {preset.label} API key</span>
             <input
               className="field"
               type="password"
               autoComplete="off"
               spellCheck={false}
-              required={!isPro}
+              required
               placeholder="Paste your key"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
@@ -286,13 +383,19 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
             It stays in this browser and is sent only with your interview messages. It&rsquo;s never stored on our servers.
             {provider === "gemini" && <> On Gemini&rsquo;s free tier, Google may use what you send (including code snippets) to improve its products, and people may review it.</>}
             {provider !== "anthropic" && <> Dad is tuned for Claude; other models may ask vaguer questions.</>}
-            {!isPro && <> No key? <a href="/pro">Get Dad Pro</a>.</>}
           </p>
           <label className="check small">
             <input type="checkbox" checked={rememberKey} onChange={(e) => setRememberKey(e.target.checked)} /> Remember the key on this device
           </label>
+          </>}
           <div className="row">
-            <button className="btn" type="submit" disabled={busy}>Start</button>
+            <button
+              className="btn"
+              type="submit"
+              disabled={busy || (tier === "free" && (!freeInfo || Boolean(freeInfo.block && freeInfo.block !== "terms_not_accepted")))}
+            >
+              Start
+            </button>
             <button type="button" className="link small" onClick={toggleDaddy}>{voice === "daddy" ? "😏 Daddy mode on (turn off)" : "🤫"}</button>
           </div>
         </form>
