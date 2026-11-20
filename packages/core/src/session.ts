@@ -14,7 +14,7 @@ export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 /**
  * "anthropic" = Claude API with the user's key (or, on the web server, the server's key).
  * "ollama"    = a local model; nothing leaves the machine.
- * "hosted"    = the Disappointed Dad server's free tier (it holds the key; snippets pass through it, never stored).
+ * "hosted"    = Dad Pro on the Disappointed Dad server (it holds the key; snippets pass through it, never stored).
  */
 export type Provider = "anthropic" | "ollama" | "hosted";
 

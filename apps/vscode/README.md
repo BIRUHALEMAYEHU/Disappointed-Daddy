@@ -17,10 +17,10 @@ Buttons: **Hint**, **Skip**, **Done**. **Disappointed Dad: Show Report Card** sh
 
 | Setting `disappointedDad.provider` | Setup |
 |---|---|
-| `auto` (default) | Uses your API key if set, else the free tier if you ran `dad login` |
-| `anthropic` | **Disappointed Dad: Set Anthropic API Key** (stored in VS Code's secret storage) |
-| `hosted` | Free tier: run `dad login` in a terminal (needs the `disappointed-dad` CLI) |
-| `ollama` | Local model via [Ollama](https://ollama.com): nothing leaves your machine |
+| `auto` (default) | Uses your API key if set, else Dad Pro if you ran `dad login` |
+| `anthropic` | **Disappointed Dad: Set Anthropic API Key** (stored in VS Code's secret storage). Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| `ollama` | Local model via [Ollama](https://ollama.com): free, nothing leaves your machine |
+| `hosted` | Dad Pro subscribers: run `dad login` in a terminal (needs the `disappointed-dad` CLI) |
 
 ## Shares progress with the terminal
 

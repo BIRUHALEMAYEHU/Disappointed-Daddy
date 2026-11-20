@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { TOOLS } from "@disappointed-dad/core";
 import { userFromBearer } from "@/lib/auth";
 import { incrementUsage } from "@/lib/db";
-import { env, freeDailyRequests, hostedModel } from "@/lib/env";
+import { env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { apiError } from "@/lib/errors";
 import { MAX_BODY_BYTES, problemWith } from "@/lib/validate";
 
@@ -12,15 +12,16 @@ export const maxDuration = 300;
 const MAX_OUTPUT_TOKENS = 16_000;
 
 /**
- * Hosted free tier. Speaks the Messages API so the CLI's normal SDK works against it.
+ * Dad Pro: hosted model for paying accounts. Speaks the Messages API so the CLI's normal SDK works against it.
  * Privacy: request and response bodies are streamed through and never logged or stored.
  */
 export async function POST(req: Request) {
   const user = await userFromBearer(req);
   if (!user) return apiError(401, "authentication_error", "Not signed in. Run: dad login");
+  if (user.plan !== "pro") return apiError(402, "payment_required", PRO_REQUIRED);
 
   const raw = await req.text();
-  if (raw.length > MAX_BODY_BYTES) return apiError(413, "request_too_large", "Session too large for the free tier.");
+  if (raw.length > MAX_BODY_BYTES) return apiError(413, "request_too_large", "This session got too long. Start a new one.");
   let body: unknown;
   try {
     body = JSON.parse(raw);
@@ -31,8 +32,8 @@ export async function POST(req: Request) {
   if (problem) return apiError(400, "invalid_request_error", problem);
 
   const used = await incrementUsage(user.id);
-  if (used > freeDailyRequests()) {
-    return apiError(429, "rate_limit_error", "Free tier limit reached for today. Use your own key (dad config set-key) or --local.");
+  if (used > proDailyRequests()) {
+    return apiError(429, "rate_limit_error", "Daily limit reached. It resets at midnight UTC. Use your own key (dad config set-key) or --local meanwhile.");
   }
 
   const b = body as { messages: Anthropic.Beta.BetaMessageParam[]; system: Anthropic.Beta.BetaTextBlockParam[]; max_tokens?: number };

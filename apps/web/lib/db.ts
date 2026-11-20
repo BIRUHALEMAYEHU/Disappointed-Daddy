@@ -11,21 +11,25 @@ export function db(): Sql {
   return g.__sql;
 }
 
+export type Plan = "none" | "pro";
+
 export interface User {
   id: number;
   login: string;
+  /** "pro" may use the hosted model (our key). Everyone else brings their own key. */
+  plan: Plan;
 }
 
 export async function upsertGithubUser(githubId: number, login: string): Promise<User> {
   const [user] = await db()<User[]>`
     insert into users (github_id, login) values (${githubId}, ${login})
     on conflict (github_id) do update set login = excluded.login
-    returning id::int as id, login`;
+    returning id::int as id, login, plan`;
   return user;
 }
 
 export async function userById(id: number): Promise<User | null> {
-  const [user] = await db()<User[]>`select id::int as id, login from users where id = ${id}`;
+  const [user] = await db()<User[]>`select id::int as id, login, plan from users where id = ${id}`;
   return user ?? null;
 }
 

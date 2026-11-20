@@ -31,6 +31,27 @@ function writeLocal(key: string, value: string) {
   }
 }
 
+/** The user's API key lives only in this browser: sessionStorage by default, localStorage if they ask. */
+const KEY_SLOT = "dd_anthropic_key";
+function loadKey(): { key: string; remembered: boolean } {
+  try {
+    const remembered = localStorage.getItem(KEY_SLOT);
+    if (remembered) return { key: remembered, remembered: true };
+    return { key: sessionStorage.getItem(KEY_SLOT) ?? "", remembered: false };
+  } catch {
+    return { key: "", remembered: false };
+  }
+}
+function storeKey(key: string, remember: boolean) {
+  try {
+    localStorage.removeItem(KEY_SLOT);
+    sessionStorage.removeItem(KEY_SLOT);
+    if (key) (remember ? localStorage : sessionStorage).setItem(KEY_SLOT, key);
+  } catch {
+    /* storage unavailable: the key is still kept in memory for this page */
+  }
+}
+
 /** Renders Dad's text, highlighting verdict lines. */
 function DadText({ text }: { text: string }) {
   return (
@@ -44,8 +65,10 @@ function DadText({ text }: { text: string }) {
   );
 }
 
-export default function Interview({ login }: { login: string }) {
+export default function Interview({ login, isPro }: { login: string; isPro: boolean }) {
   const [repo, setRepo] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [rememberKey, setRememberKey] = useState(false);
   const [mode, setMode] = useState<Mode>("talk");
   const [topic, setTopic] = useState("");
   const [hard, setHard] = useState(false);
@@ -58,7 +81,12 @@ export default function Interview({ login }: { login: string }) {
   const history = useRef<unknown[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setRepo(readLocal("dd_repo") ?? ""), []);
+  useEffect(() => {
+    setRepo(readLocal("dd_repo") ?? "");
+    const saved = loadKey();
+    setApiKey(saved.key);
+    setRememberKey(saved.remembered);
+  }, []);
   useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [lines]);
 
   const name = voice === "daddy" ? "Daddy" : "Dad";
@@ -97,7 +125,7 @@ export default function Interview({ login }: { login: string }) {
       const res = await fetch("/api/interview", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ repo, mode, voice, topic: topic || undefined, hard, history: history.current, message }),
+        body: JSON.stringify({ repo, mode, voice, topic: topic || undefined, hard, history: history.current, message, apiKey: apiKey.trim() || undefined }),
       });
       if (!res.ok || !res.body) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
@@ -137,6 +165,7 @@ export default function Interview({ login }: { login: string }) {
   async function start(e: FormEvent) {
     e.preventDefault();
     writeLocal("dd_repo", repo);
+    storeKey(apiKey.trim(), rememberKey);
     history.current = [];
     setLines([]);
     setStarted(true);
@@ -170,6 +199,26 @@ export default function Interview({ login }: { login: string }) {
           <p className="muted small">{MODES.find((m) => m.value === mode)?.hint}</p>
           {mode === "topic" && <input className="field" required placeholder="e.g. auth, database, caching" value={topic} onChange={(e) => setTopic(e.target.value)} />}
           <label className="check"><input type="checkbox" checked={hard} onChange={(e) => setHard(e.target.checked)} /> Hard mode (more twists, no easy questions)</label>
+          <label>
+            <span className="label">Your Anthropic API key{isPro ? " (optional on Pro)" : ""}</span>
+            <input
+              className="field"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              required={!isPro}
+              placeholder="sk-ant-…"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </label>
+          <p className="muted small" style={{ margin: 0 }}>
+            Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.
+            It stays in this browser and is sent only with your interview messages. It&rsquo;s never stored on our servers.
+          </p>
+          <label className="check small">
+            <input type="checkbox" checked={rememberKey} onChange={(e) => setRememberKey(e.target.checked)} /> Remember the key on this device
+          </label>
           <div className="row">
             <button className="btn" type="submit" disabled={busy}>Start</button>
             <button type="button" className="link small" onClick={toggleDaddy}>{voice === "daddy" ? "😏 Daddy mode on (turn off)" : "🤫"}</button>

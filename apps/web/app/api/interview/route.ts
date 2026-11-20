@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { InterviewSession, parseGithubRepo, type History, type Mode, type Voice } from "@disappointed-dad/core";
 import { currentUser, githubToken, isSameOrigin } from "@/lib/auth";
 import { incrementUsage } from "@/lib/db";
-import { env, freeDailyRequests, hostedModel } from "@/lib/env";
+import { byokDailyRequests, env, hostedModel, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { DbProgressStore, loadRepo } from "@/lib/interview";
 
 export const runtime = "nodejs";
@@ -23,7 +23,14 @@ interface Body {
   history: History;
   /** The user's message; null starts the session. */
   message: string | null;
+  /**
+   * The user's own Anthropic key (bring-your-own-key). Held in their browser, sent with each turn,
+   * used for that turn only, and never stored, logged or returned.
+   */
+  apiKey?: string;
 }
+
+const API_KEY_SHAPE = /^sk-ant-[A-Za-z0-9_-]{20,300}$/;
 
 function parseBody(raw: string): Body | string {
   if (raw.length > MAX_BODY_BYTES) return "This session got too long. Start a new one.";
@@ -40,6 +47,9 @@ function parseBody(raw: string): Body | string {
   if (b.message !== null && (typeof b.message !== "string" || !b.message.trim() || b.message.length > 8000)) return "Invalid message.";
   if (b.history.length === 0 && b.message !== null) return "Start the session first.";
   if (b.mode === "topic" && (typeof b.topic !== "string" || !b.topic.trim())) return "Which topic?";
+  if (b.apiKey !== undefined && (typeof b.apiKey !== "string" || !API_KEY_SHAPE.test(b.apiKey.trim()))) {
+    return "That doesn't look like an Anthropic API key (they start with sk-ant-).";
+  }
   return b as Body;
 }
 
@@ -56,8 +66,12 @@ export async function POST(req: Request) {
   const body = parseBody(await req.text());
   if (typeof body === "string") return Response.json({ error: body }, { status: 400 });
 
-  if ((await incrementUsage(user.id)) > freeDailyRequests()) {
-    return Response.json({ error: "Free tier limit reached for today. Come back tomorrow, or use the CLI with your own key." }, { status: 429 });
+  // Whose AI account pays for this turn: the user's own key, or ours for Pro accounts. No free usage.
+  const ownKey = body.apiKey?.trim();
+  if (!ownKey && user.plan !== "pro") return Response.json({ error: PRO_REQUIRED, needKey: true }, { status: 402 });
+  const limit = ownKey ? byokDailyRequests() : proDailyRequests();
+  if ((await incrementUsage(user.id)) > limit) {
+    return Response.json({ error: "Daily limit reached. It resets at midnight UTC." }, { status: 429 });
   }
 
   const { owner, repo } = parseGithubRepo(body.repo)!;
@@ -79,7 +93,7 @@ export async function POST(req: Request) {
           hard: body.hard,
           endless: body.endless,
           provider: "anthropic",
-          apiKey: env("ANTHROPIC_API_KEY"),
+          apiKey: ownKey ?? env("ANTHROPIC_API_KEY"),
           model: hostedModel(),
         });
         const handlers = {
@@ -91,10 +105,14 @@ export async function POST(req: Request) {
         else await session.send(body.message, handlers);
         emit({ type: "done", history: session.history });
       } catch (err) {
+        // Never include the raw error: an SDK error could echo request details.
         const message =
-          err instanceof Anthropic.RateLimitError ? "Dad is busy right now. Try again in a minute."
+          err instanceof Anthropic.AuthenticationError ? (ownKey ? "Anthropic rejected that API key. Check it at console.anthropic.com." : "The server's API key is invalid.")
+          : err instanceof Anthropic.PermissionDeniedError ? "That API key isn't allowed to use this model. Check your Anthropic account."
+          : err instanceof Anthropic.RateLimitError ? "Rate limited by Anthropic. Try again in a minute."
+          : err instanceof Anthropic.APIError && err.status === 400 && /credit|billing/i.test(err.message) ? "Your Anthropic account is out of credit."
           : err instanceof Anthropic.APIError ? "The AI had a problem. Try again."
-          : err instanceof Error ? err.message
+          : err instanceof Error && !(err instanceof Anthropic.AnthropicError) ? err.message
           : "Something went wrong.";
         emit({ type: "error", message });
       } finally {

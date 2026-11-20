@@ -59,14 +59,14 @@ async function resolveBrain(context: vscode.ExtensionContext): Promise<Brain | n
   if (choice === "auto" && cli.hostedToken) return { provider: "hosted", hostedToken: cli.hostedToken, serverUrl };
 
   const pick = await vscode.window.showWarningMessage(
-    "Dad needs a brain first.",
+    "Dad needs a brain first. Use your own Anthropic API key (console.anthropic.com), a local Ollama model, or Dad Pro.",
     "Set API Key",
-    "Free tier (dad login)",
     "Use local Ollama",
+    "Dad Pro (dad login)",
   );
   if (pick === "Set API Key") await vscode.commands.executeCommand("disappointedDad.setApiKey");
   else if (pick === "Use local Ollama") await cfg.update("provider", "ollama", vscode.ConfigurationTarget.Global);
-  else if (pick === "Free tier (dad login)") {
+  else if (pick === "Dad Pro (dad login)") {
     const terminal = vscode.window.createTerminal("Disappointed Dad");
     terminal.show();
     terminal.sendText("dad login", false); // typed, not run: the user presses Enter
@@ -185,8 +185,9 @@ function explain(err: unknown, provider: Provider): string {
   const status = (err as { status?: number })?.status;
   const msg = err instanceof Error ? err.message : String(err);
   if (provider === "ollama" && /ECONNREFUSED|Connection error/i.test(msg)) return "Can't reach Ollama. Is it running? (ollama serve)";
-  if (status === 401) return provider === "hosted" ? "Your free-tier login expired. Run `dad login` in a terminal." : "Invalid API key. Run \"Disappointed Dad: Set Anthropic API Key\".";
-  if (status === 429) return provider === "hosted" ? "Free tier limit reached for today." : "Rate limited. Try again in a minute.";
+  if (status === 401) return provider === "hosted" ? "Your login expired. Run `dad login` in a terminal." : "Invalid API key. Run \"Disappointed Dad: Set Anthropic API Key\".";
+  if (status === 402) return "Dad Pro isn't active on your account. Run \"Disappointed Dad: Set Anthropic API Key\" to use your own key.";
+  if (status === 429) return provider === "hosted" ? "Daily limit reached (resets at midnight UTC)." : "Rate limited. Try again in a minute.";
   return msg;
 }
 

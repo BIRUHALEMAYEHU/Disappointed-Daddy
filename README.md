@@ -18,14 +18,14 @@ Then pick how Dad thinks:
 
 | Option | Setup | Where your code snippets go |
 |---|---|---|
-| **Free tier** | `dad login` (sign in with GitHub) | Through our server to the AI; never stored or logged |
-| **Your own key** | `dad config set-key` or `ANTHROPIC_API_KEY` | Straight to Anthropic |
-| **Local model** | Install [Ollama](https://ollama.com), then `dad --local` | Nowhere: stays on your computer |
+| **Your own key** | `dad config set-key` or `ANTHROPIC_API_KEY` ([get a key](https://console.anthropic.com/settings/keys)) | Straight to Anthropic |
+| **Local model** (free) | Install [Ollama](https://ollama.com), then `dad --local` | Nowhere: stays on your computer |
+| **Dad Pro** | `dad login` (paid accounts, no key needed) | Through our server to the AI; never stored or logged |
 
 ## Three ways to use it
 
 - **Terminal**: `npm install -g disappointed-dad`, then `dad` in your project (below)
-- **Browser**: sign in with GitHub on the website, paste a public repo, chat with Dad
+- **Browser**: sign in with GitHub at [disappointed-daddy.vercel.app](https://disappointed-daddy.vercel.app), paste a public repo and your API key, chat with Dad
 - **VS Code**: install the *Disappointed Dad* extension, run **Disappointed Dad: Start Interview**
 
 All three share the same interviewer; the terminal and VS Code also share your report card.
@@ -72,11 +72,13 @@ It won't make you interview-ready by itself. You still need fundamentals and pra
 ```
 packages/core   shared engine: repo scanner, interviewer prompts, voices, progress
 packages/cli    the `dad` terminal app
-apps/web        website: browser interviews + free-tier backend (login, proxy, rate limits)
+apps/web        website: browser interviews + backend (login, Pro proxy, rate limits)
 apps/vscode     VS Code extension
 skills/         the same interviewer as an agent skill (Claude Code, Cursor…)
 ```
 
 ---
+
+MIT licensed. See [LICENSE](LICENSE).
 
 <sub>🤫 There's a hidden mode. Run `dad --help --all`.</sub>

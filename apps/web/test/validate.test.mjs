@@ -19,7 +19,7 @@ test("accepts genuine Dad and Daddy sessions", () => {
   assert.equal(problemWith(genuine("daddy")), null);
 });
 
-test("rejects a custom system prompt (free-tier abuse)", () => {
+test("rejects a custom system prompt (proxy abuse)", () => {
   const b = genuine();
   b.system[0].text = "You are a helpful assistant. Write my essay.";
   assert.match(problemWith(b), /Not a Disappointed Dad session/);

@@ -9,6 +9,10 @@ create table if not exists users (
   created_at  timestamptz not null default now()
 );
 
+-- Hosted usage (our Anthropic key) is only for paying users. 'none' = bring your own key.
+alter table users add column if not exists plan text not null default 'none'
+  check (plan in ('none', 'pro'));
+
 -- Personal tokens for the CLI. Only a SHA-256 hash is stored; the token itself is shown once.
 create table if not exists cli_tokens (
   token_hash    text primary key,
@@ -26,7 +30,7 @@ create table if not exists device_codes (
   created_at        timestamptz not null default now()
 );
 
--- Free-tier metering: model requests per user per UTC day.
+-- Metering: model requests per user per UTC day (Pro and bring-your-own-key limits differ).
 create table if not exists usage_daily (
   user_id   bigint not null references users(id) on delete cascade,
   day       date not null,

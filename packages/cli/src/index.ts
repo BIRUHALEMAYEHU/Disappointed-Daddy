@@ -33,14 +33,14 @@ Run inside the project you want to be grilled on.
   --model <id>          Model to use (default claude-opus-5-5, or gpt-oss:20b with --local)
   --local               Use a local Ollama model: free, and nothing leaves your machine
   --ollama-url <url>    Ollama address (default http://localhost:11434)
-  --hosted              Use the free tier (after dad login)
+  --hosted              Use Dad Pro, no API key needed (after dad login)
 
 During a session: /hint  /skip  /done  /quit
 
 Setup, pick one:
-  dad login             Free tier: sign in with GitHub, no API key needed
   dad config set-key    Your own Anthropic key (or set ANTHROPIC_API_KEY)
   dad --local           Ollama on your machine (dad config use-local makes it the default)
+  dad login             Dad Pro subscribers: sign in with GitHub, no key needed
 
 Account: dad whoami · dad logout
 `;
@@ -215,12 +215,14 @@ async function logout() {
 async function whoami() {
   const config = loadUserConfig();
   const provider = pickProvider({ local: false, hosted: false } as Parsed, config);
-  console.log(`Default mode: ${c.bold(provider === "ollama" ? "local (Ollama)" : provider === "hosted" ? "free tier" : "your own Anthropic key")}`);
-  if (!config.hostedToken) return console.log(c.dim("Not signed in to the free tier. Run: dad login"));
+  console.log(`Default mode: ${c.bold(provider === "ollama" ? "local (Ollama)" : provider === "hosted" ? "Dad Pro" : "your own Anthropic key")}`);
+  if (!config.hostedToken) return console.log(c.dim("Not signed in. (Only needed for Dad Pro: dad login)"));
   const res = await fetch(`${serverUrl(config)}/api/me`, { headers: { authorization: `Bearer ${config.hostedToken}` } }).catch(() => null);
-  if (!res?.ok) return console.log(c.yellow("Free-tier login is invalid or the server is unreachable. Run: dad login"));
-  const me = (await res.json()) as { login: string; used_today: number; daily_limit: number };
-  console.log(`Free tier: ${me.login}, ${me.used_today}/${me.daily_limit} requests used today`);
+  if (!res?.ok) return console.log(c.yellow("Your login is invalid or the server is unreachable. Run: dad login"));
+  const me = (await res.json()) as { login: string; plan: string; used_today: number; daily_limit: number };
+  console.log(me.plan === "pro"
+    ? `Signed in as ${me.login} (Pro): ${me.used_today}/${me.daily_limit} requests used today`
+    : `Signed in as ${me.login} (no Pro plan): use your own key with dad config set-key`);
 }
 
 function explainError(err: unknown, provider: Provider) {
@@ -230,9 +232,11 @@ function explainError(err: unknown, provider: Provider) {
   } else if (local && err instanceof Anthropic.NotFoundError) {
     console.error(c.red("\nThat model isn't downloaded. Run: ollama pull gpt-oss:20b (or pass --model <name>)"));
   } else if (provider === "hosted" && err instanceof Anthropic.AuthenticationError) {
-    console.error(c.red("\nYour free-tier login expired. Run: dad login"));
+    console.error(c.red("\nYour login expired. Run: dad login"));
+  } else if (provider === "hosted" && err instanceof Anthropic.APIError && err.status === 402) {
+    console.error(c.red("\nDad Pro isn't active on your account. Use your own key (dad config set-key) or --local."));
   } else if (provider === "hosted" && err instanceof Anthropic.RateLimitError) {
-    console.error(c.red("\nFree tier limit reached for today. Use your own key (dad config set-key) or --local."));
+    console.error(c.red("\nDaily limit reached (resets at midnight UTC). Use your own key (dad config set-key) or --local meanwhile."));
   } else if (provider === "hosted" && err instanceof Anthropic.APIConnectionError) {
     console.error(c.red("\nCan't reach the Disappointed Dad server. Check your connection and try again."));
   } else if (err instanceof Anthropic.AuthenticationError) {
@@ -292,10 +296,10 @@ export async function main(argv: string[], defaultVoice: Voice) {
         console.log("Default is now the Claude API with your key.");
       } else if (p.rest[0] === "use-hosted") {
         saveUserConfig({ ...config, provider: "hosted" });
-        console.log("Default is now the free tier (run dad login if you haven't).");
+        console.log("Default is now Dad Pro (run dad login if you haven't).");
       } else if (p.rest[0] === "set-server" && /^https?:\/\//.test(p.rest[1] ?? "")) {
         saveUserConfig({ ...config, serverUrl: p.rest[1].replace(/\/$/, "") });
-        console.log(`Free-tier server set to ${p.rest[1]}. Run dad login.`);
+        console.log(`Server set to ${p.rest[1]}. Run dad login.`);
       } else {
         console.log("Usage: dad config set-key | use-local | use-claude | use-hosted | set-server <url> | lock-daddy");
       }
@@ -316,9 +320,9 @@ export async function main(argv: string[], defaultVoice: Voice) {
     const config = loadUserConfig();
     if (provider === "anthropic" && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN && !config.apiKey) {
       console.log(`\n"Before we talk, I need a brain." Pick one:\n
-  ${c.cyan("dad login")}             Free tier: sign in with GitHub, no key needed
-  ${c.cyan("dad config set-key")}    Use your own Anthropic API key
-  ${c.cyan("dad --local")}           Use a local Ollama model (nothing leaves your machine)\n`);
+  ${c.cyan("dad config set-key")}    Use your own Anthropic API key (console.anthropic.com)
+  ${c.cyan("dad --local")}           Use a local Ollama model (free, nothing leaves your machine)
+  ${c.cyan("dad login")}             Dad Pro subscribers: no key needed\n`);
       return;
     }
     const voice = await resolveVoice(rl, defaultVoice, p, root);
@@ -327,7 +331,7 @@ export async function main(argv: string[], defaultVoice: Voice) {
 
     console.log(c.dim("Reading your project (secrets and ignored files are skipped)..."));
     if (local) console.log(c.dim("Local mode: using Ollama, nothing leaves this machine."));
-    if (provider === "hosted") console.log(c.dim("Free tier: snippets pass through the Disappointed Dad server to the AI and are never stored."));
+    if (provider === "hosted") console.log(c.dim("Dad Pro: snippets pass through the Disappointed Dad server to the AI and are never stored."));
     const session = await InterviewSession.create({
       root,
       provider,

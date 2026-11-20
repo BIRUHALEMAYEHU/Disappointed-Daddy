@@ -46,7 +46,9 @@ export async function userFromBearer(req: Request): Promise<User | null> {
   if (!match) return null;
   const [user] = await db()<User[]>`
     update cli_tokens set last_used_at = now() where token_hash = ${sha256(match[1])}
-    returning user_id::int as id, (select login from users where id = cli_tokens.user_id) as login`;
+    returning user_id::int as id,
+      (select login from users where id = cli_tokens.user_id) as login,
+      (select plan from users where id = cli_tokens.user_id) as plan`;
   return user ?? null;
 }
 

@@ -1,6 +1,8 @@
 # Disappointed Dad: backend & website
 
-Powers the **free tier** (`dad login`) and **interviews in the browser** (`/interview`): sign in with GitHub, paste a public repo, get grilled.
+Powers **interviews in the browser** (`/interview`: sign in with GitHub, paste a public repo and your own Anthropic key) and **Dad Pro** (`dad login`: paid accounts use the server's key).
+
+There is no free tier: hosted usage (the server's key) requires `users.plan = 'pro'`. Everyone else brings their own key, which the browser sends with each turn and the server uses once and never stores or logs.
 
 ```
 dad login ─► /api/cli/start ─► browser: /cli/authorize (GitHub sign-in, "Yes, connect it")
@@ -19,10 +21,11 @@ dad ─► /api/proxy/v1/messages ─► token ✓  genuine Dad session ✓  dai
 | `POST /api/cli/start` · `/api/cli/token` · `/api/cli/approve` | Terminal login (device flow) |
 | `POST /api/cli/logout` | Revokes a CLI token |
 | `GET /api/me` | `dad whoami`: login + today's usage |
-| `POST /api/proxy/v1/messages` | Messages-API-compatible proxy for the free tier |
+| `POST /api/proxy/v1/messages` | Messages-API-compatible proxy for Dad Pro (402 for non-Pro accounts) |
 
 ## Abuse protection
-- Only **genuine Disappointed Dad sessions** pass: the system prompt must match the core package's prompt exactly, and the tools must be exactly Dad's tools. Anything else gets a 400, so the free tier isn't a free general-purpose Claude.
+- Only **genuine Disappointed Dad sessions** pass: the system prompt must match the core package's prompt exactly, and the tools must be exactly Dad's tools. Anything else gets a 400, so Pro isn't a general-purpose Claude proxy.
+- To make an account Pro (until payments are wired up): `update users set plan = 'pro' where login = '<github-login>';`
 - The **server** picks the model, output limit and tools. Only the conversation comes from the client.
 - Per-user daily request limit (`FREE_DAILY_REQUESTS`, default 150; one interview is roughly 20–40 requests).
 - Request bodies are streamed through and **never logged or stored**.

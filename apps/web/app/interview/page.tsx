@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export default async function InterviewPage() {
   const user = await currentUser();
   if (!user) redirect(`/api/auth/github?next=${encodeURIComponent("/interview")}`);
-  return <Interview login={user.login} />;
+  return <Interview login={user.login} isPro={user.plan === "pro"} />;
 }

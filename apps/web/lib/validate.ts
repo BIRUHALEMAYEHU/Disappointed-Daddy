@@ -6,7 +6,7 @@ const GENUINE_PROMPTS = new Set([buildSystemPrompt("dad"), buildSystemPrompt("da
 const TOOL_NAMES = TOOLS.map((t) => t.name).sort().join(",");
 
 /**
- * Checks that a request really is a Disappointed Dad interview, so the free tier can't be used
+ * Checks that a request really is a Disappointed Dad interview, so Pro can't be used
  * as a general-purpose Claude proxy. Returns a problem description, or null if it's fine.
  */
 export function problemWith(body: unknown): string | null {

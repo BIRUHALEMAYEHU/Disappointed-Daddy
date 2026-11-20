@@ -21,16 +21,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <strong>Install</strong>
         <pre>{`npm install -g disappointed-dad
 cd your-project
-dad login     # free tier, or: dad config set-key / dad --local
+dad config set-key   # your Anthropic API key (or: dad --local with Ollama)
 dad`}</pre>
       </div>
 
       <div className="card">
         <strong>Your code stays yours</strong>
         <p className="muted" style={{ margin: "8px 0 0" }}>
-          Dad never reads <code>.env</code> files or keys. In the free tier and in the browser, the snippets Dad
-          needs pass through this server to the AI and are never stored or logged; only your grades are saved.
-          With your own key they go straight to the provider, and with <code>--local</code> they never leave your computer.
+          Dad never reads <code>.env</code> files or keys. In the terminal and VS Code, snippets go straight from your
+          machine to Anthropic with your own key, or nowhere at all with <code>--local</code>. In the browser they pass
+          through this server to Anthropic and are never stored or logged; only your grades are saved.
         </p>
       </div>
 
@@ -45,7 +45,7 @@ dad`}</pre>
       ) : (
         <div className="row">
           <a className="btn" href="/api/auth/github?next=%2Finterview">Try it in the browser</a>
-          <span className="muted small">Sign in with GitHub, paste a public repo, get grilled.</span>
+          <span className="muted small">Sign in with GitHub, paste a public repo and your API key, get grilled.</span>
         </div>
       )}
     </>

@@ -2,39 +2,93 @@
   "name": "disappointed-dad-vscode",
   "displayName": "Disappointed Dad",
   "description": "I'm not angry. I'm just disappointed you can't explain your own backend. An AI interviewer that makes you defend your code.",
+  "license": "MIT",
   "version": "0.1.0",
-  "publisher": "disappointed-dad",
-  "private": true,
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["Education", "AI", "Other"],
-  "keywords": ["interview", "learning", "code review", "ai", "claude"],
+  "publisher": "dissappointeddaddy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy.git"
+  },
+  "homepage": "https://disappointed-daddy.vercel.app",
+  "bugs": {
+    "url": "https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Education",
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "interview",
+    "learning",
+    "code review",
+    "ai",
+    "claude"
+  ],
   "main": "./dist/extension.js",
   "activationEvents": [],
   "contributes": {
     "commands": [
-      { "command": "disappointedDad.start", "title": "Start Interview", "category": "Disappointed Dad", "icon": "$(comment-discussion)" },
-      { "command": "disappointedDad.reportCard", "title": "Show Report Card", "category": "Disappointed Dad" },
-      { "command": "disappointedDad.setApiKey", "title": "Set Anthropic API Key", "category": "Disappointed Dad" },
-      { "command": "disappointedDad.clearApiKey", "title": "Remove Anthropic API Key", "category": "Disappointed Dad" }
+      {
+        "command": "disappointedDad.start",
+        "title": "Start Interview",
+        "category": "Disappointed Dad",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "disappointedDad.reportCard",
+        "title": "Show Report Card",
+        "category": "Disappointed Dad"
+      },
+      {
+        "command": "disappointedDad.setApiKey",
+        "title": "Set Anthropic API Key",
+        "category": "Disappointed Dad"
+      },
+      {
+        "command": "disappointedDad.clearApiKey",
+        "title": "Remove Anthropic API Key",
+        "category": "Disappointed Dad"
+      }
     ],
     "configuration": {
       "title": "Disappointed Dad",
       "properties": {
         "disappointedDad.provider": {
           "type": "string",
-          "enum": ["auto", "anthropic", "hosted", "ollama"],
+          "enum": [
+            "auto",
+            "anthropic",
+            "hosted",
+            "ollama"
+          ],
           "enumDescriptions": [
-            "Your API key if set, otherwise the free tier if you've run `dad login`",
+            "Your API key if set, otherwise Dad Pro if you've run `dad login`",
             "Claude with your own API key",
-            "Free tier (run `dad login` in a terminal first)",
+            "Dad Pro subscribers (run `dad login` in a terminal first)",
             "A local Ollama model: nothing leaves your machine"
           ],
           "default": "auto",
           "description": "Where Dad's brain lives."
         },
-        "disappointedDad.model": { "type": "string", "default": "", "description": "Model override. Empty = claude-opus-5-5 (or gpt-oss:20b for Ollama)." },
-        "disappointedDad.ollamaUrl": { "type": "string", "default": "http://localhost:11434", "description": "Ollama address." },
-        "disappointedDad.serverUrl": { "type": "string", "default": "", "description": "Free-tier server. Empty = the one `dad login` used." },
+        "disappointedDad.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model override. Empty = claude-opus-5-5 (or gpt-oss:20b for Ollama)."
+        },
+        "disappointedDad.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama address."
+        },
+        "disappointedDad.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Dad Pro server. Empty = the one `dad login` used."
+        },
         "disappointedDad.daddyMode": {
           "type": "boolean",
           "default": false,
@@ -46,7 +100,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "package": "node build.mjs --production && npx @vscode/vsce package --no-dependencies"
+    "package": "node -e \"require('fs').copyFileSync('../../LICENSE','LICENSE')\" && node build.mjs --production && npx --yes @vscode/vsce@3 package --no-dependencies"
   },
   "devDependencies": {
     "@disappointed-dad/core": "0.1.0",

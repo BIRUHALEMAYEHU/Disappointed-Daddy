@@ -2,25 +2,42 @@
   "name": "disappointed-dad",
   "version": "0.1.0",
   "description": "I'm not angry. I'm just disappointed you can't explain your own backend. An AI interviewer that makes you defend your code.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "dad": "bin/dad.js",
     "daddy": "bin/daddy.js"
   },
-  "files": ["bin", "dist/index.js"],
-  "engines": { "node": ">=18" },
-  "repository": { "type": "git", "url": "git+https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy.git", "directory": "packages/cli" },
+  "files": [
+    "bin",
+    "dist/index.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy.git",
+    "directory": "packages/cli"
+  },
   "homepage": "https://disappointed-daddy.vercel.app",
   "bugs": "https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy/issues",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "npm run typecheck && node build.mjs",
-    "prepack": "npm run typecheck && node build.mjs --production && node -e \"require('fs').copyFileSync('../../README.md','README.md')\""
+    "prepack": "npm run typecheck && node build.mjs --production && node -e \"const fs=require('fs');fs.copyFileSync('../../README.md','README.md');fs.copyFileSync('../../LICENSE','LICENSE')\""
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^1.10.0",
     "@disappointed-dad/core": "0.1.0",
     "esbuild": "^0.25.0"
   },
-  "keywords": ["interview", "cli", "ai", "code-review", "learning", "claude"]
+  "keywords": [
+    "interview",
+    "cli",
+    "ai",
+    "code-review",
+    "learning",
+    "claude"
+  ]
 }
