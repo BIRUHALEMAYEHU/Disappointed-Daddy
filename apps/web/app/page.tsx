@@ -123,7 +123,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
                 <th scope="row">Cost</th>
                 <td>Free</td>
                 <td>Whatever your AI provider charges</td>
-                <td>Prepaid credit: 250 ETB buys $1, charged at real cost</td>
+                <td>Prepaid credit, topped up in Birr and charged at real cost</td>
               </tr>
               <tr>
                 <th scope="row">Model</th>
@@ -164,11 +164,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           <li>Dad never reads <code>.env</code> files, private keys or credential files, and skips everything in <code>.gitignore</code>.</li>
           <li>Code snippets go only where your plan sends them, as listed above. Dad can&rsquo;t open files outside your project.</li>
           <li>We store your grades (topic names and one-line notes), not your code or your conversations.</li>
-          <li>Open source under the MIT license. <a href="https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy">Read every line on GitHub</a>.</li>
+          <li>Open source under the MIT license.</li>
         </ul>
         <div className="row" style={{ marginTop: 24 }}>
           <a className="btn" href={startHref}>Start an interview</a>
-          <a className="chip" href="https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy">View the source</a>
         </div>
       </section>
     </>

@@ -20,7 +20,6 @@ export async function GET() {
   const cfg = birrConfig();
   const accounts = (Object.keys(cfg.accounts) as Bank[]).map((bank) => ({ bank, label: BANKS[bank], ...cfg.accounts[bank]! }));
   return Response.json({
-    birrPerUsd: cfg.perUsd,
     minTopup: cfg.minTopup,
     accounts,
     available: accounts.length > 0 && Boolean(process.env.VERIFY_ET_API_KEY),

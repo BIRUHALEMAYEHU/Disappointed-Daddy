@@ -5,14 +5,7 @@
   "license": "MIT",
   "version": "0.1.0",
   "publisher": "dissappointeddaddy",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy.git"
-  },
   "homepage": "https://disappointed-daddy.vercel.app",
-  "bugs": {
-    "url": "https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy/issues"
-  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -110,7 +103,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "package": "node -e \"require('fs').copyFileSync('../../LICENSE','LICENSE')\" && node build.mjs --production && npx --yes @vscode/vsce@3 package --no-dependencies"
+    "package": "node -e \"require('fs').copyFileSync('../../LICENSE','LICENSE')\" && node build.mjs --production && npx --yes @vscode/vsce@3 package --no-dependencies --allow-missing-repository"
   },
   "devDependencies": {
     "@disappointed-dad/core": "0.1.0",

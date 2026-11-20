@@ -4,7 +4,6 @@ import { useEffect, useState, type FormEvent } from "react";
 
 interface Account { bank: string; label: string; account: string; name: string }
 interface Info {
-  birrPerUsd: number;
   minTopup: number;
   accounts: Account[];
   available: boolean;
@@ -59,7 +58,6 @@ export default function Pro({ login }: { login: string }) {
 
   const free = info.pro.source === "comped" || info.pro.source === "manual";
   const selected = info.accounts.find((a) => a.bank === bank);
-  const examples = [info.minTopup, info.minTopup * 2, info.minTopup * 4];
 
   return (
     <>
@@ -80,11 +78,8 @@ export default function Pro({ login }: { login: string }) {
         <div className="card"><p className="muted" style={{ margin: 0 }}>Birr payments open soon.</p></div>
       ) : (
         <form className="card stack" onSubmit={submit}>
-          <strong>Top up in Birr: {info.birrPerUsd} ETB = $1 of credit</strong>
-          <p className="small" style={{ margin: 0 }}>
-            {examples.map((b, i) => <span key={b}>{i > 0 && " · "}{b} ETB → <b>{usd(Math.floor((b / info.birrPerUsd) * 1_000_000))}</b></span>)}
-            {" "}(minimum {info.minTopup} ETB)
-          </p>
+          <strong>Top up in Birr</strong>
+          <p className="small" style={{ margin: 0 }}>Pay any amount from {info.minTopup} ETB. Your credit appears as soon as the payment is confirmed.</p>
           <ol className="small" style={{ margin: 0, paddingLeft: 20 }}>
             <li>Send any amount from <b>{info.minTopup} ETB</b> to one of these:</li>
           </ol>

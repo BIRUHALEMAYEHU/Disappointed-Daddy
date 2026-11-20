@@ -197,7 +197,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <nav className="nav" aria-label="Main">
               <a href="/interview">Interview</a>
               <a href="/pro">Pro</a>
-              <a className="hide-sm" href="https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy">Source</a>
               {user ? (
                 <form action="/api/auth/logout" method="post">
                   <button className="link" type="submit" title={`Signed in as ${user.login}`}>Sign out</button>
@@ -212,7 +211,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <footer className="footer">
           <div className="footer-in">
             <span>Disappointed Dad 0.1, MIT licensed</span>
-            <a href="https://github.com/BIRUHALEMAYEHU/Disappointed-Daddy">Source on GitHub</a>
             <a href="https://www.npmjs.com/package/disappointed-dad">npm package</a>
             <a href="https://marketplace.visualstudio.com/items?itemName=dissappointeddaddy.disappointed-dad-vscode">VS Code extension</a>
           </div>
