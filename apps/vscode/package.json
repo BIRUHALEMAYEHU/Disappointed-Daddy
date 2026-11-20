@@ -3,7 +3,7 @@
   "displayName": "Disappointed Dad",
   "description": "I'm not angry. I'm just disappointed you can't explain your own backend. An AI interviewer that makes you defend your code.",
   "license": "MIT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "dissappointeddaddy",
   "homepage": "https://disappointed-daddy.vercel.app",
   "engines": {
