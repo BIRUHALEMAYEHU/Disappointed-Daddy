@@ -11,7 +11,7 @@ import { costMicroUsd } from "@/lib/pricing";
 class OutOfCredit extends Error {}
 import { byokDailyRequests, env, PRO_REQUIRED, proDailyRequests } from "@/lib/env";
 import { DbProgressStore, loadRepo } from "@/lib/interview";
-import { freeModel } from "@/lib/free";
+import { freeModels } from "@/lib/free";
 import { isProMode, proModelFor, type ProMode } from "@/lib/routing";
 import { freeStatusFor } from "@/lib/free-server";
 import { recordFreeUse } from "@/lib/db";
@@ -131,7 +131,7 @@ export async function POST(req: Request) {
           endless: body.endless,
           // Free: Gemini free API. Own key: the provider the user chose. Otherwise Pro on our Anthropic key.
           ...(free
-            ? { provider: "openai-compatible" as const, providerId: "gemini" as const, apiKey: env("GEMINI_API_KEY"), model: freeModel() }
+            ? { provider: "openai-compatible" as const, providerId: "gemini" as const, apiKey: env("GEMINI_API_KEY"), model: freeModels()[0], fallbackModels: freeModels().slice(1) }
             : ownKey && byokProvider !== "anthropic"
               ? { provider: "openai-compatible" as const, providerId: byokProvider, apiKey: ownKey, model: body.model?.trim() || undefined }
               : { provider: "anthropic" as const, apiKey: ownKey ?? env("ANTHROPIC_API_KEY"), model: ownKey ? body.model?.trim() || undefined : proModel }),

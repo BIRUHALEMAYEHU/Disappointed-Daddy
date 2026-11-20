@@ -132,29 +132,52 @@ export class ProviderError extends Error {
   }
 }
 
-/** Streams one Chat Completions request with the same small surface as the Anthropic SDK stream. */
+/** Statuses that mean "busy or temporarily broken": worth trying the next fallback model. */
+const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+
+/**
+ * Streams one Chat Completions request with the same small surface as the Anthropic SDK stream.
+ * `fallbackModels` are tried in order when a model is busy (e.g. Gemini's "high demand" 503), but only
+ * before any text has streamed, so a reply never mixes two models.
+ */
 export function streamChat(opts: {
   baseUrl: string;
   apiKey: string;
   model: string;
+  fallbackModels?: string[];
   messages: ChatMessage[];
   tools: ChatTool[];
 }) {
   const listeners: Array<(delta: string) => void> = [];
   const acc = new ChatAccumulator();
 
-  const done = (async () => {
+  const open = async (model: string) => {
     const res = await fetch(`${opts.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${opts.apiKey}` },
-      body: JSON.stringify({ model: opts.model, messages: opts.messages, tools: opts.tools, tool_choice: "auto", stream: true }),
+      body: JSON.stringify({ model, messages: opts.messages, tools: opts.tools, tool_choice: "auto", stream: true }),
     });
     if (!res.ok || !res.body) {
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | Array<{ error?: { message?: string } }> | null;
       const detail = Array.isArray(body) ? body[0]?.error?.message : body?.error?.message;
       throw new ProviderError(res.status, detail || `The AI provider returned an error (${res.status}).`);
     }
-    const reader = res.body.getReader();
+    return res;
+  };
+
+  const done = (async () => {
+    const models = [opts.model, ...(opts.fallbackModels ?? [])];
+    let res: Response | undefined;
+    for (const [i, model] of models.entries()) {
+      try {
+        res = await open(model);
+        break;
+      } catch (err) {
+        const last = i === models.length - 1;
+        if (last || !(err instanceof ProviderError) || !RETRYABLE.has(err.status)) throw err;
+      }
+    }
+    const reader = res!.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     for (;;) {

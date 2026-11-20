@@ -31,7 +31,17 @@ export function freeLimits(env: Record<string, string | undefined> = process.env
   };
 }
 
-export const freeModel = (env: Record<string, string | undefined> = process.env) => env.FREE_MODEL || "gemini-3.8-flash";
+/**
+ * Free-tier models, tried in order when one is busy (Google's free models regularly report "high demand").
+ * FREE_MODEL may list several, comma separated.
+ */
+export const freeModels = (env: Record<string, string | undefined> = process.env): string[] => {
+  const list = (env.FREE_MODEL || "gemini-3.8-flash,gemini-flash-latest,gemini-3.1-flash-lite-preview")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^[A-Za-z0-9_\-.:/@]{1,120}$/.test(s));
+  return list.length ? list : ["gemini-3.8-flash"];
+};
 
 export type FreeBlock =
   | "not_configured"

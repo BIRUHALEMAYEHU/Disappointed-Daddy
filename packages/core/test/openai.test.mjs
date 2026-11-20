@@ -118,6 +118,27 @@ test("openai-compatible needs a known provider, a key and a model", async () => 
   await assert.rejects(InterviewSession.create({ ...base, providerId: "openai", apiKey: "k".repeat(30) }), /model/);
 });
 
+test("busy model falls back to the next one; non-retryable errors don't", async () => {
+  const tried = [];
+  globalThis.fetch = async (url, init) => {
+    const model = JSON.parse(init.body).model;
+    tried.push(model);
+    if (model === "busy-model") return Response.json({ error: { message: "high demand" } }, { status: 503 });
+    return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+  };
+  const m = await streamChat({ baseUrl: "https://x", apiKey: "k", model: "busy-model", fallbackModels: ["backup-model"], messages: [], tools: [] }).finalMessage();
+  assert.deepEqual(tried, ["busy-model", "backup-model"]);
+  assert.equal(m.content[0].text, "ok");
+
+  tried.length = 0;
+  globalThis.fetch = async (url, init) => { tried.push(JSON.parse(init.body).model); return Response.json({ error: { message: "bad key" } }, { status: 401 }); };
+  await assert.rejects(streamChat({ baseUrl: "https://x", apiKey: "k", model: "a", fallbackModels: ["b"], messages: [], tools: [] }).finalMessage(), /bad key/);
+  assert.deepEqual(tried, ["a"], "a rejected key must not be retried on other models");
+
+  globalThis.fetch = async () => Response.json({ error: { message: "high demand" } }, { status: 503 });
+  await assert.rejects(streamChat({ baseUrl: "https://x", apiKey: "k", model: "a", fallbackModels: ["b"], messages: [], tools: [] }).finalMessage(), /high demand/);
+});
+
 test("key sanity check", () => {
   assert.equal(looksLikeApiKey("sk-proj-" + "a".repeat(30)), true);
   assert.equal(looksLikeApiKey("AIza" + "b".repeat(35)), true);

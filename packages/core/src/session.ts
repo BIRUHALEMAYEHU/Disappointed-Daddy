@@ -42,6 +42,8 @@ export interface SessionOptions {
   provider?: Provider;
   /** Which OpenAI-compatible provider, when provider = "openai-compatible". */
   providerId?: ProviderId;
+  /** OpenAI-compatible only: models to try, in order, when `model` is busy (e.g. a free tier's "high demand"). */
+  fallbackModels?: string[];
   ollamaUrl?: string;
   serverUrl?: string;
   hostedToken?: string;
@@ -240,6 +242,7 @@ export class InterviewSession {
         baseUrl: preset.baseUrl!,
         apiKey: this.opts.apiKey!,
         model: (this.opts.model ?? preset.defaultModel)!,
+        fallbackModels: this.opts.fallbackModels,
         messages: toChatMessages(this.system, this.messages),
         tools: toChatTools(TOOLS),
       });

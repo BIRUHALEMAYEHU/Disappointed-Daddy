@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { freeLimits, freeStatus } from "../lib/free.ts";
+import { freeLimits, freeModels, freeStatus } from "../lib/free.ts";
 
 const now = new Date("2026-11-20T12:00:00Z");
 const base = {
@@ -14,6 +14,12 @@ const base = {
   limits: freeLimits({}),
   now,
 };
+
+test("free models: a fallback chain by default, configurable, junk ignored", () => {
+  assert.deepEqual(freeModels({}), ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite-preview"]);
+  assert.deepEqual(freeModels({ FREE_MODEL: "a, b" }), ["a", "b"]);
+  assert.deepEqual(freeModels({ FREE_MODEL: "bad model!, ok-model" }), ["ok-model"]);
+});
 
 test("defaults: 2 interviews, 40 turns, 30-day-old accounts", () => {
   assert.deepEqual(freeLimits({}), { interviewsPerDay: 2, turnsPerDay: 40, minAccountAgeDays: 30 });
