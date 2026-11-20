@@ -94,7 +94,13 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
 
   async function refreshProgress(r = repo) {
     const res = await fetch(`/api/progress?repo=${encodeURIComponent(r)}`).catch(() => null);
-    if (res?.ok) setProgress(await res.json());
+    if (!res?.ok) return;
+    const data = (await res.json().catch(() => null)) as Partial<Progress> | null;
+    // Accept only well-formed progress, so odd data can never crash the page.
+    setProgress({
+      topics: data && typeof data.topics === "object" && data.topics ? data.topics : {},
+      mocks: Array.isArray(data?.mocks) ? data.mocks : [],
+    });
   }
 
   function toggleDaddy() {
@@ -281,11 +287,11 @@ export default function Interview({ login, isPro }: { login: string; isPro: bool
         ) : (
           <ul>
             {topics.map(([t, v]) => (
-              <li key={t}><span className={`grade g-${v.status}`}>{GRADE[v.status]}</span> <b>{t}</b><div className="muted small">{v.notes}</div></li>
+              <li key={t}><span className={`grade g-${v?.status}`}>{GRADE[v?.status] ?? "?"}</span> <b>{t}</b><div className="muted small">{v?.notes}</div></li>
             ))}
           </ul>
         )}
-        {progress?.mocks.length ? (
+        {progress?.mocks?.length ? (
           <p className="small">Last sit-down: <b>{progress.mocks[progress.mocks.length - 1].score}/10</b></p>
         ) : null}
       </aside>
