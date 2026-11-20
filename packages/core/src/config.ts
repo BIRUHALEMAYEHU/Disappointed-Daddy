@@ -14,7 +14,8 @@ export interface UserConfig {
   serverUrl?: string;
 }
 
-export const DEFAULT_SERVER_URL = "http://localhost:3000";
+/** The hosted free tier. Override with `dad config set-server <url>` or DAD_SERVER_URL (e.g. http://localhost:3000 for local dev). */
+export const DEFAULT_SERVER_URL = "https://disappointed-daddy.vercel.app";
 
 /** Per-project settings, committed by a team in .disappointed-dad.json. */
 export interface ProjectConfig {

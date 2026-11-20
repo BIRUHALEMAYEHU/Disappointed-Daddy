@@ -9,7 +9,7 @@
     "apps/vscode"
   ],
   "scripts": {
-    "build": "npm run build -w @disappointed-dad/core && npm run build -w disappointed-dad",
+    "build": "npm run build -w @disappointed-dad/core && npm run build -w disappointed-dad && npm run build -w disappointed-dad-vscode",
     "test": "npm run build && npm test -w @disappointed-dad/core && npm test -w @disappointed-dad/web",
     "web": "npm run build -w @disappointed-dad/core && npm run dev -w @disappointed-dad/web",
     "dad": "node packages/cli/bin/dad.js",

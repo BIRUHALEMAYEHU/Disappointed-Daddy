@@ -313,8 +313,15 @@ export async function main(argv: string[], defaultVoice: Voice) {
       return;
     }
 
-    const voice = await resolveVoice(rl, defaultVoice, p, root);
     const config = loadUserConfig();
+    if (provider === "anthropic" && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN && !config.apiKey) {
+      console.log(`\n"Before we talk, I need a brain." Pick one:\n
+  ${c.cyan("dad login")}             Free tier: sign in with GitHub, no key needed
+  ${c.cyan("dad config set-key")}    Use your own Anthropic API key
+  ${c.cyan("dad --local")}           Use a local Ollama model (nothing leaves your machine)\n`);
+      return;
+    }
+    const voice = await resolveVoice(rl, defaultVoice, p, root);
     const accent = voice === "daddy" ? c.pink : c.cyan;
     const name = voice === "daddy" ? "Daddy" : "Dad";
 
